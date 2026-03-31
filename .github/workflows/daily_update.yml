@@ -1,0 +1,37 @@
+name: Daily Football Update
+
+on:
+  schedule:
+    # Läuft täglich um 08:00 UTC (= 09:00 MEZ / 10:00 MESZ)
+    - cron: '0 8 * * *'
+    # Zusätzlich Sa+So um 10:00 UTC für Spieltag-Check
+    - cron: '0 10 * * 6,0'
+  # Manuell ausführbar (Button auf GitHub)
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Repository laden
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Pakete installieren
+        run: pip install requests pandas numpy
+
+      - name: Daily Update ausführen
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: python 17_daily_update.py
+
+      - name: Log speichern
+        if: always()
+        run: echo "Update abgeschlossen $(date)" >> update_log.txt
