@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Football">
+<meta name="application-name" content="Football">
+<link rel="manifest" href="manifest.json">
+<title>Predictive Football</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap');
+:root{--bg:#0a0a0f;--surface:#12121a;--surface2:#1a1a26;--border:#2a2a3a;--accent:#00ff88;--accent2:#ff6b35;--accent3:#4488ff;--text:#e8e8f0;--text2:#8888aa;--win:#00ff88;--loss:#ff4466;--pending:#ffaa00}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;overflow-x:hidden;padding-bottom:80px}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,255,136,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+.container{max-width:1200px;margin:0 auto;padding:0 16px;position:relative;z-index:1}
+
+/* HEADER */
+header{border-bottom:1px solid var(--border);padding:16px 0;background:rgba(10,10,15,.95);backdrop-filter:blur(20px);position:sticky;top:0;z-index:100}
+.header-inner{display:flex;align-items:center;justify-content:space-between}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:3px;color:var(--accent);text-shadow:0 0 30px rgba(0,255,136,.4)}
+.logo span{color:var(--text2);font-size:10px;display:block;font-family:'Space Mono',monospace;letter-spacing:2px;margin-top:-2px}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite;display:inline-block;margin-right:6px}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,255,136,.4)}50%{opacity:.7;box-shadow:0 0 0 6px rgba(0,255,136,0)}}
+.header-status{font-family:'Space Mono',monospace;font-size:10px;color:var(--accent);display:flex;align-items:center}
+
+/* BOTTOM NAV */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(10,10,15,.97);border-top:1px solid var(--border);backdrop-filter:blur(20px);z-index:200;display:flex;justify-content:space-around;padding:8px 0 max(8px,env(safe-area-inset-bottom))}
+.nav-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 16px;cursor:pointer;border:none;background:none;color:var(--text2);transition:color .2s;font-family:'DM Sans',sans-serif}
+.nav-item.active{color:var(--accent)}
+.nav-icon{font-size:20px}
+.nav-label{font-size:10px;font-family:'Space Mono',monospace;letter-spacing:1px}
+
+/* PAGES */
+.page{display:none;padding:20px 0}
+.page.active{display:block}
+
+/* BANKROLL CARD */
+.bankroll-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:16px;position:relative;overflow:hidden}
+.bankroll-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent3),var(--accent2))}
+.bankroll-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.stat-label{font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+.stat-value{font-family:'Bebas Neue',sans-serif;font-size:36px;line-height:1;color:var(--text)}
+.stat-value.positive{color:var(--win)}
+.stat-value.negative{color:var(--loss)}
+.stat-sub{font-size:12px;color:var(--text2);margin-top:2px}
+
+/* PROGRESS */
+.progress-section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+.progress-label{display:flex;justify-content:space-between;font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);margin-bottom:10px}
+.progress-bar{height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent3));border-radius:3px;transition:width .8s ease}
+
+/* CHART */
+.chart-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+.chart-svg{width:100%;height:120px}
+
+/* SECTION */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;margin-top:20px}
+.section-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px}
+.badge{font-family:'Space Mono',monospace;font-size:10px;padding:3px 10px;border-radius:20px;background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.3);color:var(--accent)}
+
+/* EMPFEHLUNG */
+.empf-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;position:relative;overflow:hidden;cursor:pointer;transition:all .2s;-webkit-user-select:none;user-select:none}
+.empf-card:active{transform:scale(.98)}
+.empf-card.stark::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+.empf-card.mittel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--pending)}
+.empf-teams{font-size:15px;font-weight:600;margin-bottom:4px}
+.empf-meta{display:flex;gap:10px;font-size:11px;color:var(--text2);font-family:'Space Mono',monospace;flex-wrap:wrap}
+.empf-bottom{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.wett-typ{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px}
+.wett-typ.ueber{color:var(--accent2)}
+.wett-typ.unter{color:var(--accent3)}
+.quote-big{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent);line-height:1}
+.einsatz-hint{font-size:11px;color:var(--text2);font-family:'Space Mono',monospace}
+
+/* WETTEN LIST */
+.wette-item{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px}
+.wette-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.wette-teams{font-size:14px;font-weight:600}
+.wette-liga{font-size:11px;color:var(--accent3);font-family:'Space Mono',monospace}
+.status-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-family:'Space Mono',monospace}
+.status-badge.gewonnen{background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.3);color:var(--win)}
+.status-badge.verloren{background:rgba(255,68,102,.1);border:1px solid rgba(255,68,102,.3);color:var(--loss)}
+.status-badge.offen{background:rgba(255,170,0,.1);border:1px solid rgba(255,170,0,.3);color:var(--pending)}
+.wette-details{display:flex;gap:12px;font-size:12px;color:var(--text2);font-family:'Space Mono',monospace;flex-wrap:wrap}
+.wette-actions{margin-top:10px;display:flex;gap:8px}
+
+/* BUTTONS */
+.btn{padding:10px 20px;border-radius:8px;border:none;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:1px;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#000;font-weight:700}
+.btn-primary:active{background:#00cc6a;transform:scale(.97)}
+.btn-secondary{background:transparent;border:1px solid var(--border);color:var(--text2)}
+.btn-secondary:active{border-color:var(--text);color:var(--text)}
+.btn-sm{padding:6px 12px;font-size:10px}
+.btn-danger{background:rgba(255,68,102,.1);border:1px solid rgba(255,68,102,.3);color:var(--loss)}
+.fab{position:fixed;bottom:90px;right:20px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:#000;font-size:24px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,255,136,.4);z-index:150;transition:all .2s}
+.fab:active{transform:scale(.92)}
+
+/* STRATEGIE CARDS */
+.strat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.strat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
+.strat-name{font-size:13px;font-weight:600;margin-bottom:2px}
+.strat-liga{font-size:10px;color:var(--accent3);font-family:'Space Mono',monospace;margin-bottom:12px}
+.strat-roi{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent);line-height:1}
+.strat-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.strat-stat{background:var(--surface2);border-radius:6px;padding:8px;text-align:center}
+.strat-stat-val{font-family:'Space Mono',monospace;font-size:12px;font-weight:700}
+.strat-stat-lbl{font-size:9px;color:var(--text2);margin-top:2px}
+.konst-bar{margin-top:10px;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden}
+.konst-fill{height:100%;background:linear-gradient(90deg,var(--accent3),var(--accent));border-radius:2px}
+
+/* SAISON RESULTS */
+.saison-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px}
+.saison-box{text-align:center;padding:12px 8px;background:var(--surface2);border-radius:8px}
+.saison-lbl{font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);margin-bottom:4px}
+.saison-val{font-family:'Bebas Neue',sans-serif;font-size:20px}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);z-index:500;display:none;align-items:flex-end;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto}
+.modal-handle{width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;margin-bottom:20px;color:var(--accent)}
+.form-group{margin-bottom:14px}
+.form-label{font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);letter-spacing:1px;display:block;margin-bottom:6px}
+.form-input,.form-select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:15px;outline:none;transition:border-color .2s;-webkit-appearance:none;appearance:none}
+.form-input:focus,.form-select:focus{border-color:var(--accent)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.signal-box{padding:12px;border-radius:8px;font-family:'Space Mono',monospace;font-size:11px;margin:10px 0;display:none;line-height:1.6}
+.btn-row{display:flex;gap:10px;margin-top:20px}
+.btn-row .btn{flex:1;justify-content:center}
+
+/* ANALYSE */
+.analyse-item{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid rgba(42,42,58,.5)}
+.analyse-item:last-child{border-bottom:none}
+
+/* TOAST */
+.toast{position:fixed;top:80px;left:50%;transform:translateX(-50%) translateY(-20px);background:var(--surface);border:1px solid var(--accent);color:var(--accent);padding:10px 20px;border-radius:20px;font-family:'Space Mono',monospace;font-size:11px;z-index:9999;opacity:0;transition:all .3s;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* LOADING */
+.loading{text-align:center;padding:40px;color:var(--text2);font-family:'Space Mono',monospace;font-size:12px}
+.spinner{width:30px;height:30px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* EMPTY */
+.empty{text-align:center;padding:50px 20px;color:var(--text2)}
+.empty-icon{font-size:40px;margin-bottom:12px;opacity:.4}
+.empty-title{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--text);margin-bottom:6px}
+
+@media(min-width:600px){
+  .strat-grid{grid-template-columns:repeat(4,1fr)}
+  .bankroll-grid{grid-template-columns:repeat(4,1fr)}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <div class="logo">Football<span>ANALYTICS ENGINE</span></div>
+      <div style="display:flex;align-items:center;gap:10px">
+      <button id="update-btn" onclick="zeigeUpdateInfo()" style="display:none;padding:6px 14px;border-radius:20px;border:none;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:1px;transition:all .2s">
+        ↻ UPDATE FÄLLIG
+      </button>
+      <div class="header-status"><div class="status-dot"></div><span id="db-status">VERBINDE...</span></div>
+    </div>
+    </div>
+  </div>
+</header>
+
+<!-- PAGES -->
+<div class="container">
+
+  <!-- DASHBOARD -->
+  <div id="page-dashboard" class="page active">
+    <div class="bankroll-card">
+      <div class="bankroll-grid">
+        <div>
+          <div class="stat-label">Bankroll</div>
+          <div class="stat-value" id="d-bankroll">—</div>
+          <div class="stat-sub">Start: 50.00€</div>
+        </div>
+        <div>
+          <div class="stat-label">Gewinn/Verlust</div>
+          <div class="stat-value" id="d-gewinn">—</div>
+          <div class="stat-sub" id="d-roi">ROI: —</div>
+        </div>
+        <div>
+          <div class="stat-label">Hitrate</div>
+          <div class="stat-value" id="d-hit">—</div>
+          <div class="stat-sub" id="d-wetten">0 Wetten</div>
+        </div>
+        <div>
+          <div class="stat-label">Offen</div>
+          <div class="stat-value" id="d-offen">—</div>
+          <div class="stat-sub">Warten auf Ergebnis</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="progress-section">
+      <div class="progress-label"><span>ZIEL: 50€ → 1000€</span><span id="d-progress-pct">0%</span></div>
+      <div class="progress-bar"><div class="progress-fill" id="d-progress" style="width:0%"></div></div>
+    </div>
+
+    <div class="chart-box">
+      <div class="stat-label" style="margin-bottom:10px">BANKROLL VERLAUF</div>
+      <svg class="chart-svg" id="chart" viewBox="0 0 400 100" preserveAspectRatio="none">
+        <text x="200" y="55" text-anchor="middle" fill="#333344" font-family="Space Mono" font-size="10">Noch keine Wetten</text>
+      </svg>
+    </div>
+
+    <div class="section-header">
+      <div class="section-title">AKTUELLE SIGNALE</div>
+      <div class="badge" id="signal-count">0 heute</div>
+    </div>
+    <div id="dash-signale"><div class="loading"><div class="spinner"></div>Lade Signale...</div></div>
+  </div>
+
+  <!-- EMPFEHLUNGEN -->
+  <div id="page-empf" class="page">
+    <div class="section-header">
+      <div class="section-title">EMPFEHLUNGEN</div>
+      <button class="btn btn-secondary btn-sm" onclick="ladeEmpfehlungen()">↻</button>
+    </div>
+    <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);margin-bottom:16px">
+      Strategie: ÜBER 2.5 | impl_unter &gt; 50% | Sa/So Premier League, 2.BL, Scottish Prem
+    </div>
+    <div id="empf-liste"><div class="loading"><div class="spinner"></div>Lade...</div></div>
+  </div>
+
+  <!-- WETTEN -->
+  <div id="page-wetten" class="page">
+    <div class="section-header">
+      <div class="section-title">MEINE WETTEN</div>
+      <div class="badge" id="wetten-badge">0</div>
+    </div>
+    <div id="wetten-liste"><div class="loading"><div class="spinner"></div>Lade...</div></div>
+  </div>
+
+  <!-- STRATEGIE -->
+  <div id="page-strat" class="page">
+    <div class="section-header">
+      <div class="section-title">MASTER STRATEGIE</div>
+      <div class="badge">30.387 SPIELE</div>
+    </div>
+
+    <div class="strat-grid">
+      <div class="strat-card">
+        <div class="strat-name">Premier League</div>
+        <div class="strat-liga">SONNTAG | ÜBER 2.5</div>
+        <div class="strat-roi">+14.7%</div>
+        <div class="strat-stats">
+          <div class="strat-stat"><div class="strat-stat-val">54.9%</div><div class="strat-stat-lbl">Hitrate</div></div>
+          <div class="strat-stat"><div class="strat-stat-val">80%</div><div class="strat-stat-lbl">Konsistenz</div></div>
+        </div>
+        <div class="konst-bar"><div class="konst-fill" style="width:80%"></div></div>
+      </div>
+      <div class="strat-card">
+        <div class="strat-name">2. Bundesliga</div>
+        <div class="strat-liga">SA+SO | ÜBER 2.5</div>
+        <div class="strat-roi">+9.6%</div>
+        <div class="strat-stats">
+          <div class="strat-stat"><div class="strat-stat-val">55.7%</div><div class="strat-stat-lbl">Hitrate</div></div>
+          <div class="strat-stat"><div class="strat-stat-val">75%</div><div class="strat-stat-lbl">Konsistenz</div></div>
+        </div>
+        <div class="konst-bar"><div class="konst-fill" style="width:75%"></div></div>
+      </div>
+      <div class="strat-card">
+        <div class="strat-name">Scottish Prem</div>
+        <div class="strat-liga">SONNTAG | ÜBER 2.5</div>
+        <div class="strat-roi">+7.2%</div>
+        <div class="strat-stats">
+          <div class="strat-stat"><div class="strat-stat-val">51.4%</div><div class="strat-stat-lbl">Hitrate</div></div>
+          <div class="strat-stat"><div class="strat-stat-val">80%</div><div class="strat-stat-lbl">Konsistenz</div></div>
+        </div>
+        <div class="konst-bar"><div class="konst-fill" style="width:80%"></div></div>
+      </div>
+      <div class="strat-card">
+        <div class="strat-name">Championship</div>
+        <div class="strat-liga">SONNTAG | ÜBER 2.5</div>
+        <div class="strat-roi">+5.5%</div>
+        <div class="strat-stats">
+          <div class="strat-stat"><div class="strat-stat-val">50.0%</div><div class="strat-stat-lbl">Hitrate</div></div>
+          <div class="strat-stat"><div class="strat-stat-val">60%</div><div class="strat-stat-lbl">Konsistenz</div></div>
+        </div>
+        <div class="konst-bar"><div class="konst-fill" style="width:60%"></div></div>
+      </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px">
+      <div class="stat-label" style="margin-bottom:12px">BACKTEST PRO SAISON (Simulation)</div>
+      <div class="saison-grid">
+        <div class="saison-box"><div class="saison-lbl">2019/20</div><div class="saison-val" style="color:var(--win)">+11%</div></div>
+        <div class="saison-box"><div class="saison-lbl">2020/21</div><div class="saison-val" style="color:var(--win)">+7%</div></div>
+        <div class="saison-box"><div class="saison-lbl">2021/22</div><div class="saison-val" style="color:var(--win)">+36%</div></div>
+        <div class="saison-box"><div class="saison-lbl">2022/23</div><div class="saison-val" style="color:var(--win)">+90%</div></div>
+        <div class="saison-box"><div class="saison-lbl">2023/24</div><div class="saison-val" style="color:var(--win)">+13%</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ANALYSE -->
+  <div id="page-analyse" class="page">
+    <div class="section-header"><div class="section-title">ANALYSE</div></div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">
+      <div class="stat-label" style="margin-bottom:12px">PRO LIGA</div>
+      <div id="liga-analyse"><div style="color:var(--text2);font-size:13px">Noch keine Daten.</div></div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px">
+      <div class="stat-label" style="margin-bottom:12px">PRO WOCHENTAG</div>
+      <div id="tag-analyse"><div style="color:var(--text2);font-size:13px">Noch keine Daten.</div></div>
+    </div>
+  </div>
+
+</div>
+
+  <!-- WM 2026 -->
+  <div id="page-wm" class="page">
+    <div style="background:linear-gradient(135deg,#1a1a26,#0a0a0f);border:1px solid #333;border-radius:16px;padding:24px;margin-bottom:16px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-20px;right:-20px;font-size:120px;opacity:.05">🏆</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;color:#ffaa00;margin-bottom:4px">FIFA WM 2026</div>
+      <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text2);margin-bottom:16px">USA • KANADA • MEXIKO | 11. JUNI – 19. JULI 2026</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+        <div style="background:rgba(255,170,0,.1);border:1px solid rgba(255,170,0,.3);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:#ffaa00" id="wm-tage">—</div>
+          <div style="font-size:10px;color:var(--text2);font-family:'Space Mono',monospace">TAGE BIS WM</div>
+        </div>
+        <div style="background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.3);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent)" id="wm-teams">48</div>
+          <div style="font-size:10px;color:var(--text2);font-family:'Space Mono',monospace">TEAMS</div>
+        </div>
+        <div style="background:rgba(68,136,255,.1);border:1px solid rgba(68,136,255,.3);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent3)">104</div>
+          <div style="font-size:10px;color:var(--text2);font-family:'Space Mono',monospace">SPIELE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WM Strategie Info -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">
+      <div class="stat-label" style="margin-bottom:12px">WM ANALYSE-STRATEGIE</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:12px">
+        Dieselbe Logik wie Vereinsfußball – aber angepasst auf WM-Besonderheiten:
+      </div>
+      <div style="display:grid;gap:8px">
+        <div style="background:var(--surface2);border-radius:8px;padding:12px;display:flex;gap:12px;align-items:center">
+          <span style="font-size:20px">📊</span>
+          <div><div style="font-size:13px;font-weight:600">Implizite Wahrscheinlichkeit</div><div style="font-size:11px;color:var(--text2)">Buchmacher-Marge rausrechnen, Edge finden</div></div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:12px;display:flex;gap:12px;align-items:center">
+          <span style="font-size:20px">⚡</span>
+          <div><div style="font-size:13px;font-weight:600">Gruppenphase vs K.O.</div><div style="font-size:11px;color:var(--text2)">Verschiedene Muster – Gruppenphase mehr taktisch, K.O. offener</div></div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:12px;display:flex;gap:12px;align-items:center">
+          <span style="font-size:20px">🌍</span>
+          <div><div style="font-size:13px;font-weight:600">Konföderation-Analyse</div><div style="font-size:11px;color:var(--text2)">UEFA-Teams spielen anders als CONMEBOL/CONCACAF</div></div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:12px;display:flex;gap:12px;align-items:center">
+          <span style="font-size:20px">📈</span>
+          <div><div style="font-size:13px;font-weight:600">Historische WM-Daten</div><div style="font-size:11px;color:var(--text2)">2010-2022 Analyse auf Über/Unter Muster läuft bereits</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WM Spiele / Qualifikation -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">
+      <div class="section-header" style="margin-top:0">
+        <div class="stat-label">AKTUELLE WM-SPIELE & QUOTEN</div>
+        <button class="btn btn-secondary btn-sm" onclick="ladeWMSpiele()">↻ Laden</button>
+      </div>
+      <div id="wm-spiele-liste">
+        <div class="empty">
+          <div class="empty-icon">📅</div>
+          <div class="empty-title">WM STARTET BALD</div>
+          <div style="font-size:13px">Ab Juni 2026 erscheinen hier alle Spiele mit aktuellen Quoten und Empfehlungen in Echtzeit.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WM Historische Analyse -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">
+      <div class="stat-label" style="margin-bottom:12px">HISTORISCHE WM-ANALYSE (2010-2022)</div>
+      <div id="wm-historik">
+        <div class="loading"><div class="spinner"></div>Berechne...</div>
+      </div>
+    </div>
+
+    <!-- WM Empfehlungen -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px">
+      <div class="stat-label" style="margin-bottom:12px">WM WETT-EMPFEHLUNGEN</div>
+      <div id="wm-empfehlungen">
+        <div style="color:var(--text2);font-size:13px;text-align:center;padding:20px">
+          Empfehlungen erscheinen sobald WM-Spiele mit Quoten verfügbar sind.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FAB -->
+<button class="fab" onclick="openModal('wette-modal')" title="Neue Wette">+</button>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav">
+  <button class="nav-item active" onclick="showPage('dashboard',this)">
+    <span class="nav-icon">📊</span><span class="nav-label">HOME</span>
+  </button>
+  <button class="nav-item" onclick="showPage('empf',this)">
+    <span class="nav-icon">🎯</span><span class="nav-label">SIGNALE</span>
+  </button>
+  <button class="nav-item" onclick="showPage('wetten',this)">
+    <span class="nav-icon">📋</span><span class="nav-label">WETTEN</span>
+  </button>
+  <button class="nav-item" onclick="showPage('strat',this)">
+    <span class="nav-icon">⚡</span><span class="nav-label">STRATEGIE</span>
+  </button>
+  <button class="nav-item" onclick="showPage('analyse',this)">
+    <span class="nav-icon">📈</span><span class="nav-label">ANALYSE</span>
+  </button>
+  <button class="nav-item" onclick="showPage('wm',this)">
+    <span class="nav-icon">🏆</span><span class="nav-label">WM 2026</span>
+  </button>
+</nav>
+
+<!-- MODAL: Neue Wette -->
+<div class="modal-overlay" id="wette-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">NEUE WETTE</div>
+    <div class="form-group">
+      <label class="form-label">LIGA</label>
+      <select class="form-select" id="w-liga" onchange="checkSignal()">
+        <option value="">Liga wählen...</option>
+        <option value="Premier_League">Premier League</option>
+        <option value="2_Bundesliga">2. Bundesliga</option>
+        <option value="Scottish_Prem">Scottish Premiership</option>
+        <option value="Eredivisie">Eredivisie</option>
+        <option value="Championship">Championship</option>
+        <option value="andere">Andere Liga</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">HEIMTEAM</label>
+        <input class="form-input" id="w-heim" placeholder="z.B. Arsenal">
+      </div>
+      <div class="form-group">
+        <label class="form-label">AUSWÄRTSTEAM</label>
+        <input class="form-input" id="w-ausw" placeholder="z.B. Chelsea">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">DATUM</label>
+        <input class="form-input" type="date" id="w-datum" onchange="checkSignal()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">RICHTUNG</label>
+        <select class="form-select" id="w-richtung">
+          <option value="ueber">ÜBER 2.5 Tore</option>
+          <option value="unter">UNTER 2.5 Tore</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">QUOTE UNTER 2.5</label>
+        <input class="form-input" type="number" id="w-qu" step="0.01" placeholder="1.85" oninput="checkSignal()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">QUOTE ÜBER 2.5</label>
+        <input class="form-input" type="number" id="w-qo" step="0.01" placeholder="1.95" oninput="checkSignal()">
+      </div>
+    </div>
+    <div class="signal-box" id="signal-box"></div>
+    <div class="form-group">
+      <label class="form-label">EINSATZ (€)</label>
+      <input class="form-input" type="number" id="w-einsatz" step="0.50" placeholder="Empfohlen: 3% Bankroll">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeModal('wette-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="wetteEintragen()">Eintragen ✓</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Ergebnis -->
+<div class="modal-overlay" id="erg-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">ERGEBNIS</div>
+    <div id="erg-spiel" style="margin-bottom:16px;font-size:15px;color:var(--text)"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">TORE HEIM</label>
+        <input class="form-input" type="number" id="erg-h" min="0" max="20" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">TORE AUSWÄRTS</label>
+        <input class="form-input" type="number" id="erg-a" min="0" max="20" placeholder="0">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeModal('erg-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="ergebnisEintragen()">Bestätigen</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// SUPABASE SETUP
+// ============================================================
+const SUPABASE_URL = 'https://yloudwrsmpbtxovxozqm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_E43hus55ruODU1i0G8FLjg_TLVAoghZ';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const STARTKAPITAL = 50.0;
+const EINSATZ_PCT = 0.03;
+let aktuelleWetteId = null;
+let alleWetten = [];
+
+// ============================================================
+// INIT
+// ============================================================
+async function init() {
+  try {
+    const { data, error } = await db.from('wetten').select('count', { count: 'exact', head: true });
+    if (error) throw error;
+    document.getElementById('db-status').textContent = 'LIVE';
+  } catch(e) {
+    document.getElementById('db-status').textContent = 'OFFLINE';
+    document.querySelector('.status-dot').style.background = 'var(--loss)';
+  }
+  await ladeAlleWetten();
+  updateDashboard();
+  ladeEmpfehlungen();
+}
+
+// ============================================================
+// DATEN
+// ============================================================
+async function ladeAlleWetten() {
+  try {
+    const { data, error } = await db.from('wetten').select('*').order('created_at', { ascending: true });
+    if (error) throw error;
+    alleWetten = data || [];
+  } catch(e) {
+    alleWetten = [];
+  }
+}
+
+function berecheBankroll() {
+  let bk = STARTKAPITAL;
+  alleWetten.forEach(w => {
+    if (w.status === 'gewonnen') bk += w.einsatz * (w.quote - 1);
+    else if (w.status === 'verloren') bk -= w.einsatz;
+  });
+  return Math.round(bk * 100) / 100;
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function updateDashboard() {
+  const bankroll = berecheBankroll();
+  const gewinn = bankroll - STARTKAPITAL;
+  const roi = (gewinn / STARTKAPITAL) * 100;
+  const abg = alleWetten.filter(w => w.status !== 'offen');
+  const gew = abg.filter(w => w.status === 'gewonnen');
+  const offen = alleWetten.filter(w => w.status === 'offen');
+  const hit = abg.length > 0 ? (gew.length / abg.length * 100) : null;
+
+  document.getElementById('d-bankroll').textContent = bankroll.toFixed(2) + '€';
+  const gEl = document.getElementById('d-gewinn');
+  gEl.textContent = (gewinn >= 0 ? '+' : '') + gewinn.toFixed(2) + '€';
+  gEl.className = 'stat-value ' + (gewinn >= 0 ? 'positive' : 'negative');
+  document.getElementById('d-roi').textContent = 'ROI: ' + roi.toFixed(1) + '%';
+  document.getElementById('d-hit').textContent = hit !== null ? hit.toFixed(1) + '%' : '—';
+  document.getElementById('d-wetten').textContent = abg.length + ' Wetten';
+  document.getElementById('d-offen').textContent = offen.length;
+
+  const prog = Math.max(0, Math.min(((bankroll - 50) / 950) * 100, 100));
+  document.getElementById('d-progress').style.width = prog + '%';
+  document.getElementById('d-progress-pct').textContent = prog.toFixed(1) + '%';
+
+  updateChart(bankroll);
+  updateAnalyse();
+}
+
+function updateChart(bankroll) {
+  const svg = document.getElementById('chart');
+  const punkte = [STARTKAPITAL, ...alleWetten.filter(w=>w.status!=='offen').map((w,i) => {
+    let bk = STARTKAPITAL;
+    alleWetten.filter(x=>x.status!=='offen').slice(0,i+1).forEach(x => {
+      if(x.status==='gewonnen') bk += x.einsatz*(x.quote-1);
+      else bk -= x.einsatz;
+    });
+    return bk;
+  })];
+
+  if (punkte.length < 2) {
+    svg.innerHTML = '<text x="200" y="55" text-anchor="middle" fill="#333344" font-family="Space Mono" font-size="10">Noch keine Wetten</text>';
+    return;
+  }
+
+  const min = Math.min(...punkte) * 0.97;
+  const max = Math.max(...punkte) * 1.03;
+  const W = 400, H = 100;
+  const pts = punkte.map((v,i) => `${(i/(punkte.length-1))*W},${H-((v-min)/(max-min))*H}`);
+  const col = bankroll >= STARTKAPITAL ? '#00ff88' : '#ff4466';
+
+  svg.innerHTML = `
+    <defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${col}" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="${col}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <path d="M 0,${H} L ${pts.join(' L ')} L ${W},${H} Z" fill="url(#cg)"/>
+    <path d="M ${pts.join(' L ')}" fill="none" stroke="${col}" stroke-width="1.5"/>
+    <circle cx="${W}" cy="${H-((punkte[punkte.length-1]-min)/(max-min))*H}" r="3" fill="${col}"/>
+    <text x="2" y="12" fill="#555566" font-family="Space Mono" font-size="8">${max.toFixed(0)}€</text>
+    <text x="2" y="${H-2}" fill="#555566" font-family="Space Mono" font-size="8">${min.toFixed(0)}€</text>`;
+}
+
+// ============================================================
+// EMPFEHLUNGEN
+// ============================================================
+const STRATEGIEN = {
+  'Premier_League': { minImpl: 0.50, tage: [0], name: 'Premier League' },
+  '2_Bundesliga':   { minImpl: 0.50, tage: [0,6], name: '2. Bundesliga' },
+  'Scottish_Prem':  { minImpl: 0.50, tage: [0], name: 'Scottish Prem' },
+  'Eredivisie':     { minImpl: 0.55, tage: [0,1,2,3,4,5,6], name: 'Eredivisie' },
+  'Championship':   { minImpl: 0.50, tage: [0], name: 'Championship' },
+};
+
+const LIGA_URLS = {
+  'Premier_League': 'https://www.football-data.co.uk/mmz4281/2425/E0.csv',
+  '2_Bundesliga':   'https://www.football-data.co.uk/mmz4281/2425/D2.csv',
+  'Scottish_Prem':  'https://www.football-data.co.uk/mmz4281/2425/SC0.csv',
+  'Eredivisie':     'https://www.football-data.co.uk/mmz4281/2425/N1.csv',
+  'Championship':   'https://www.football-data.co.uk/mmz4281/2425/E1.csv',
+};
+
+// PERFORMANCE: Cache für CSV-Daten (4 Stunden)
+const CSV_CACHE = {};
+const CACHE_DAUER = 4 * 60 * 60 * 1000;
+
+async function fetchMitCache(url) {
+  const jetzt = Date.now();
+  if (CSV_CACHE[url] && (jetzt - CSV_CACHE[url].zeit) < CACHE_DAUER) {
+    return CSV_CACHE[url].daten;
+  }
+  const proxy = 'https://corsproxy.io/?' + encodeURIComponent(url);
+  const proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+  let text;
+  try {
+    const res = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
+    text = await res.text();
+  } catch(e) {
+    const res = await fetch(proxy2, { signal: AbortSignal.timeout(8000) });
+    text = await res.text();
+  }
+  const daten = parseCSV(text);
+  CSV_CACHE[url] = { daten, zeit: jetzt };
+  return daten;
+}
+
+// Verletzungsdaten Cache
+let verletzungsCache = null;
+let verletzungsCacheZeit = 0;
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.trim().replace(/"/g,''));
+  return lines.slice(1).map(line => {
+    const vals = line.split(',');
+    const obj = {};
+    headers.forEach((h,i) => obj[h] = (vals[i]||'').trim().replace(/"/g,''));
+    return obj;
+  }).filter(r => r.HomeTeam && r.AwayTeam);
+}
+
+async function ladeEmpfehlungen() {
+  const container = document.getElementById('empf-liste');
+  const dashContainer = document.getElementById('dash-signale');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div>Lade aktuelle Spiele...</div>';
+
+  const empfehlungen = [];
+  const bankroll = berecheBankroll();
+
+  // PERFORMANCE: Alle Ligen parallel laden
+  const ligaPromises = Object.entries(LIGA_URLS).map(async ([liga, url]) => {
+    try {
+      const spiele = await fetchMitCache(url);
+      return { liga, spiele };
+    } catch(e) { return { liga, spiele: [] }; }
+  });
+  const ligaErgebnisse = await Promise.all(ligaPromises);
+
+  for (const { liga, spiele } of ligaErgebnisse) {
+    try {
+      const _ = spiele; // bereits geladen
+      const strat = STRATEGIEN[liga];
+
+      spiele.forEach(s => {
+        if (!s['Avg<2.5'] || !s['Avg>2.5'] || !s.Date) return;
+        if (s.FTHG && s.FTHG !== '') return; // bereits gespielt
+
+        const qU = parseFloat(s['Avg<2.5']);
+        const qO = parseFloat(s['Avg>2.5']);
+        if (isNaN(qU) || isNaN(qO) || qU <= 1 || qO <= 1) return;
+
+        const impl = (1/qU) / (1/qU + 1/qO);
+        const dateParts = s.Date.split('/');
+        let spielDatum;
+        try {
+          spielDatum = new Date(`20${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`);
+        } catch(e) { return; }
+
+        const tag = spielDatum.getDay();
+        if (impl < strat.minImpl) return;
+        if (!strat.tage.includes(tag)) return;
+
+        const edge = (impl - strat.minImpl) * 100;
+        empfehlungen.push({
+          liga, ligaName: strat.name,
+          heim: s.HomeTeam, ausw: s.AwayTeam,
+          datum: s.Date, spielDatum,
+          qU, qO, impl, edge,
+          quote: qO, einsatz: (bankroll * EINSATZ_PCT).toFixed(2),
+          signal: impl > 0.55 ? 'stark' : 'mittel'
+        });
+      });
+    } catch(e) {}
+  }
+
+  empfehlungen.sort((a,b) => a.spielDatum - b.spielDatum);
+  document.getElementById('signal-count').textContent = empfehlungen.length + ' Signale';
+
+  if (empfehlungen.length === 0) {
+    const html = `<div class="empty"><div class="empty-icon">📡</div><div class="empty-title">KEINE SIGNALE</div><div style="font-size:13px">Signale erscheinen wenn passende Spiele mit Quoten verfügbar sind (meist Fr/Sa für Wochenende)</div></div>`;
+    container.innerHTML = html;
+    dashContainer.innerHTML = html;
+    return;
+  }
+
+  const html = empfehlungen.map(e => `
+    <div class="empf-card ${e.signal}" onclick="openWetteVonEmpf('${e.liga}','${e.heim}','${e.ausw}','${e.datum}',${e.qU},${e.qO})">
+      <div class="empf-teams">${e.heim} vs ${e.ausw}</div>
+      <div class="empf-meta">
+        <span style="color:var(--accent3)">${e.ligaName}</span>
+        <span>${e.datum}</span>
+        <span>impl: ${(e.impl*100).toFixed(0)}%</span>
+        <span style="color:var(--accent)">Edge +${e.edge.toFixed(1)}%</span>
+        ${e.verletzungsWarnung ? '<span style="color:var(--pending)">⚠ Ausfälle</span>' : ''}
+      </div>
+      <div class="empf-bottom">
+        <div>
+          <div class="wett-typ ueber">ÜBER 2.5 TORE</div>
+          <div style="font-size:11px;color:var(--text2);font-family:'Space Mono',monospace">Empfehlung</div>
+        </div>
+        <div style="text-align:right">
+          <div class="quote-big">${e.qO.toFixed(2)}</div>
+          <div class="einsatz-hint">${e.einsatz}€ Einsatz</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  container.innerHTML = html;
+  dashContainer.innerHTML = empfehlungen.slice(0,2).map(e => `
+    <div class="empf-card ${e.signal}" onclick="openWetteVonEmpf('${e.liga}','${e.heim}','${e.ausw}','${e.datum}',${e.qU},${e.qO})">
+      <div class="empf-teams">${e.heim} vs ${e.ausw}</div>
+      <div class="empf-meta">
+        <span style="color:var(--accent3)">${e.ligaName}</span>
+        <span style="color:var(--accent)">ÜBER 2.5 @ ${e.qO.toFixed(2)}</span>
+        <span>Edge +${e.edge.toFixed(1)}%</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openWetteVonEmpf(liga, heim, ausw, datum, qU, qO) {
+  document.getElementById('w-liga').value = liga;
+  document.getElementById('w-heim').value = heim;
+  document.getElementById('w-ausw').value = ausw;
+  document.getElementById('w-qu').value = qU;
+  document.getElementById('w-qo').value = qO;
+  document.getElementById('w-richtung').value = 'ueber';
+  // Datum konvertieren
+  const p = datum.split('/');
+  document.getElementById('w-datum').value = `20${p[2]}-${p[1]}-${p[0]}`;
+  document.getElementById('w-einsatz').value = (berecheBankroll() * EINSATZ_PCT).toFixed(2);
+  checkSignal();
+  openModal('wette-modal');
+}
+
+// ============================================================
+// SIGNAL CHECK
+// ============================================================
+function checkSignal() {
+  const liga = document.getElementById('w-liga').value;
+  const datum = document.getElementById('w-datum').value;
+  const qU = parseFloat(document.getElementById('w-qu').value);
+  const qO = parseFloat(document.getElementById('w-qo').value);
+  const box = document.getElementById('signal-box');
+  document.getElementById('w-einsatz').value = (berecheBankroll() * EINSATZ_PCT).toFixed(2);
+
+  if (!liga || !datum || isNaN(qU) || isNaN(qO)) { box.style.display='none'; return; }
+
+  const impl = (1/qU) / (1/qU + 1/qO);
+  const tag = new Date(datum).getDay();
+  const strat = STRATEGIEN[liga];
+
+  if (strat && strat.tage.includes(tag) && impl >= strat.minImpl) {
+    box.style.cssText = 'display:block;background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.3);color:#00ff88';
+    box.innerHTML = `✓ SIGNAL ERKANNT<br>impl_unter: ${(impl*100).toFixed(1)}% | Edge: +${((impl-strat.minImpl)*100).toFixed(1)}%<br>→ ÜBER 2.5 wetten`;
+  } else if (strat) {
+    box.style.cssText = 'display:block;background:rgba(255,68,102,.1);border:1px solid rgba(255,68,102,.3);color:#ff4466';
+    const grund = !strat.tage.includes(tag) ? 'Falscher Wochentag für diese Liga' : `impl_unter ${(impl*100).toFixed(1)}% zu niedrig`;
+    box.innerHTML = `✗ KEIN SIGNAL — ${grund}`;
+  } else {
+    box.style.display = 'none';
+  }
+}
+
+// ============================================================
+// WETTE EINTRAGEN
+// ============================================================
+async function wetteEintragen() {
+  const liga = document.getElementById('w-liga').value;
+  const heim = document.getElementById('w-heim').value.trim();
+  const ausw = document.getElementById('w-ausw').value.trim();
+  const datum = document.getElementById('w-datum').value;
+  const richtung = document.getElementById('w-richtung').value;
+  const qU = parseFloat(document.getElementById('w-qu').value);
+  const qO = parseFloat(document.getElementById('w-qo').value);
+  const einsatz = parseFloat(document.getElementById('w-einsatz').value);
+
+  if (!liga || !heim || !ausw || !datum || isNaN(einsatz)) {
+    showToast('Bitte alle Felder ausfüllen'); return;
+  }
+
+  const quote = richtung === 'ueber' ? qO : qU;
+  const impl = (qU && qO) ? (1/qU)/(1/qU+1/qO) : 0.5;
+
+  try {
+    const { error } = await db.from('wetten').insert([{
+      liga, heim, ausw,
+      datum: datum,
+      richtung, quote, quote_unter: qU, quote_ueber: qO,
+      impl_unter: impl, einsatz, status: 'offen'
+    }]);
+    if (error) throw error;
+    await ladeAlleWetten();
+    updateDashboard();
+    renderWetten();
+    closeModal('wette-modal');
+    showToast('Wette eingetragen ✓');
+    resetWetteForm();
+  } catch(e) {
+    showToast('Fehler: ' + e.message);
+  }
+}
+
+function resetWetteForm() {
+  ['w-liga','w-heim','w-ausw','w-datum','w-qu','w-qo','w-einsatz'].forEach(id => document.getElementById(id).value='');
+  document.getElementById('signal-box').style.display='none';
+}
+
+// ============================================================
+// ERGEBNIS
+// ============================================================
+function openErgebnis(id) {
+  aktuelleWetteId = id;
+  const w = alleWetten.find(x => x.id === id);
+  document.getElementById('erg-spiel').innerHTML = `
+    <strong>${w.heim} vs ${w.ausw}</strong><br>
+    <span style="color:var(--text2);font-size:12px;font-family:'Space Mono',monospace">
+      ${w.liga} | ${w.richtung === 'ueber' ? 'ÜBER' : 'UNTER'} 2.5 @ ${parseFloat(w.quote).toFixed(2)}
+    </span>`;
+  document.getElementById('erg-h').value = '';
+  document.getElementById('erg-a').value = '';
+  openModal('erg-modal');
+}
+
+async function ergebnisEintragen() {
+  const th = parseInt(document.getElementById('erg-h').value);
+  const ta = parseInt(document.getElementById('erg-a').value);
+  if (isNaN(th) || isNaN(ta)) { showToast('Tore eingeben'); return; }
+
+  const w = alleWetten.find(x => x.id === aktuelleWetteId);
+  const gesamt = th + ta;
+  const ueber = gesamt > 2;
+  const gewonnen = w.richtung === 'ueber' ? ueber : !ueber;
+  const status = gewonnen ? 'gewonnen' : 'verloren';
+  const gewinn = gewonnen ? parseFloat(w.einsatz) * (parseFloat(w.quote) - 1) : -parseFloat(w.einsatz);
+
+  try {
+    const { error } = await db.from('wetten').update({
+      status, tore_heim: th, tore_ausw: ta, gewinn: Math.round(gewinn*100)/100
+    }).eq('id', aktuelleWetteId);
+    if (error) throw error;
+    await ladeAlleWetten();
+    updateDashboard();
+    renderWetten();
+    closeModal('erg-modal');
+    showToast(gewonnen ? `✓ Gewonnen! +${(parseFloat(w.einsatz)*(parseFloat(w.quote)-1)).toFixed(2)}€` : `✗ Verloren -${parseFloat(w.einsatz).toFixed(2)}€`);
+  } catch(e) {
+    showToast('Fehler: ' + e.message);
+  }
+}
+
+// ============================================================
+// WETTEN LISTE
+// ============================================================
+function renderWetten() {
+  const liste = document.getElementById('wetten-liste');
+  document.getElementById('wetten-badge').textContent = alleWetten.length;
+
+  if (alleWetten.length === 0) {
+    liste.innerHTML = '<div class="empty"><div class="empty-icon">🎯</div><div class="empty-title">KEINE WETTEN</div><div>Tippe auf + um eine Wette einzutragen</div></div>';
+    return;
+  }
+
+  liste.innerHTML = [...alleWetten].reverse().map(w => `
+    <div class="wette-item">
+      <div class="wette-header">
+        <div>
+          <div class="wette-teams">${w.heim} vs ${w.ausw}</div>
+          <div class="wette-liga">${w.liga}</div>
+        </div>
+        <span class="status-badge ${w.status}">
+          ${w.status === 'gewonnen' ? '✓ GEWONNEN' : w.status === 'verloren' ? '✗ VERLOREN' : '○ OFFEN'}
+        </span>
+      </div>
+      <div class="wette-details">
+        <span>${w.datum}</span>
+        <span style="color:${w.richtung==='ueber'?'var(--accent2)':'var(--accent3)'}">${w.richtung === 'ueber' ? 'ÜBER' : 'UNTER'} 2.5</span>
+        <span>@ ${parseFloat(w.quote).toFixed(2)}</span>
+        <span>${parseFloat(w.einsatz).toFixed(2)}€ Einsatz</span>
+        ${w.tore_heim !== null && w.tore_heim !== undefined ? `<span>${w.tore_heim}:${w.tore_ausw} (${parseInt(w.tore_heim)+parseInt(w.tore_ausw)} Tore)</span>` : ''}
+        ${w.gewinn !== null && w.gewinn !== undefined ? `<span style="color:${w.gewinn>=0?'var(--win)':'var(--loss);font-weight:600'}">${w.gewinn>=0?'+':''}${parseFloat(w.gewinn).toFixed(2)}€</span>` : ''}
+      </div>
+      ${w.status === 'offen' ? `
+        <div class="wette-actions">
+          <button class="btn btn-primary btn-sm" onclick="openErgebnis('${w.id}')">Ergebnis eintragen</button>
+        </div>` : ''}
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// ANALYSE
+// ============================================================
+function updateAnalyse() {
+  const abg = alleWetten.filter(w => w.status !== 'offen');
+
+  // Liga
+  const ligaDiv = document.getElementById('liga-analyse');
+  if (abg.length === 0) { ligaDiv.innerHTML = '<div style="color:var(--text2);font-size:13px">Noch keine Daten.</div>'; }
+  else {
+    const ligen = {};
+    abg.forEach(w => {
+      if (!ligen[w.liga]) ligen[w.liga] = { gew: 0, ges: 0, gewinn: 0 };
+      ligen[w.liga].ges++;
+      if (w.status === 'gewonnen') { ligen[w.liga].gew++; ligen[w.liga].gewinn += parseFloat(w.einsatz)*(parseFloat(w.quote)-1); }
+      else ligen[w.liga].gewinn -= parseFloat(w.einsatz);
+    });
+    ligaDiv.innerHTML = Object.entries(ligen).map(([liga, s]) => `
+      <div class="analyse-item">
+        <div><div style="font-size:13px">${liga}</div><div style="font-size:11px;color:var(--text2);font-family:'Space Mono',monospace">${s.gew}/${s.ges} (${(s.gew/s.ges*100).toFixed(0)}%)</div></div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:${s.gewinn>=0?'var(--win)':'var(--loss)'}">${s.gewinn>=0?'+':''}${s.gewinn.toFixed(2)}€</div>
+      </div>`).join('');
+  }
+
+  // Wochentag
+  const tagDiv = document.getElementById('tag-analyse');
+  const tagN = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+  if (abg.length === 0) { tagDiv.innerHTML = '<div style="color:var(--text2);font-size:13px">Noch keine Daten.</div>'; }
+  else {
+    const tage = {};
+    abg.forEach(w => {
+      const d = new Date(w.datum);
+      const tag = tagN[d.getDay()] || '?';
+      if (!tage[tag]) tage[tag] = { gew: 0, ges: 0 };
+      tage[tag].ges++;
+      if (w.status === 'gewonnen') tage[tag].gew++;
+    });
+    tagDiv.innerHTML = Object.entries(tage).map(([tag, s]) => `
+      <div class="analyse-item">
+        <span>${tag}</span>
+        <span style="font-family:'Space Mono',monospace;font-size:12px">${s.gew}/${s.ges} (${(s.gew/s.ges*100).toFixed(0)}%)</span>
+      </div>`).join('');
+  }
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function showPage(name, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  if (el) el.classList.add('active');
+  if (name === 'wetten') renderWetten();
+  if (name === 'empf') ladeEmpfehlungen();
+  if (name === 'analyse') updateAnalyse();
+  if (name === 'wm') { initWM(); ladeWMSpiele(); }
+}
+
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if(e.target===m) m.classList.remove('active'); });
+});
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// PWA Install Prompt
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  setTimeout(() => {
+    if (deferredPrompt) {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;bottom:90px;left:16px;right:16px;background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:16px;z-index:300;display:flex;align-items:center;justify-content:space-between;gap:12px';
+      banner.innerHTML = `
+        <div style="font-size:13px"><strong style="color:var(--accent)">Football</strong> als App installieren?</div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button onclick="this.parentElement.parentElement.remove()" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text2);font-size:11px;cursor:pointer">Nein</button>
+          <button onclick="installPWA()" style="padding:6px 12px;border-radius:6px;border:none;background:var(--accent);color:#000;font-size:11px;font-weight:700;cursor:pointer">Installieren</button>
+        </div>`;
+      document.body.appendChild(banner);
+    }
+  }, 3000);
+});
+
+function installPWA() {
+  if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; }
+}
+
+// Service Worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+
+
+// ============================================================
+// AUTO-ERGEBNISSE
+// ============================================================
+async function pruefeAutomatischeErgebnisse() {
+  const offene = alleWetten.filter(w => w.status === 'offen');
+  if (offene.length === 0) return;
+
+  let aktualisiert = 0;
+
+  for (const [liga, url] of Object.entries(LIGA_URLS)) {
+    const offeneLiga = offene.filter(w => w.liga === liga);
+    if (offeneLiga.length === 0) continue;
+
+    try {
+      const spiele = await fetchMitCache(url);
+      const gespielt = spiele.filter(s => s.FTHG && s.FTHG !== '');
+
+      for (const wette of offeneLiga) {
+        const wHeim = (wette.heim || '').toLowerCase().trim();
+        const wAusw = (wette.ausw || '').toLowerCase().trim();
+
+        const gefunden = gespielt.find(s => {
+          const sHeim = (s.HomeTeam || '').toLowerCase().trim();
+          const sAusw = (s.AwayTeam || '').toLowerCase().trim();
+          const heimOk = wHeim.includes(sHeim.slice(0,5)) || sHeim.includes(wHeim.slice(0,5));
+          const auswOk = wAusw.includes(sAusw.slice(0,5)) || sAusw.includes(wAusw.slice(0,5));
+          return heimOk && auswOk;
+        });
+
+        if (!gefunden) continue;
+
+        const th = parseInt(gefunden.FTHG);
+        const ta = parseInt(gefunden.FTAG);
+        if (isNaN(th) || isNaN(ta)) continue;
+
+        const gesamt = th + ta;
+        const ueber = gesamt > 2;
+        const gewonnen = wette.richtung === 'ueber' ? ueber : !ueber;
+        const status = gewonnen ? 'gewonnen' : 'verloren';
+        const gewinn = gewonnen
+          ? Math.round(wette.einsatz * (wette.quote - 1) * 100) / 100
+          : -wette.einsatz;
+
+        try {
+          const { error } = await db.from('wetten').update({
+            status, tore_heim: th, tore_ausw: ta,
+            gewinn: Math.round(gewinn * 100) / 100
+          }).eq('id', wette.id);
+
+          if (!error) aktualisiert++;
+        } catch(e) {}
+      }
+    } catch(e) {}
+  }
+
+  if (aktualisiert > 0) {
+    await ladeAlleWetten();
+    updateDashboard();
+    renderWetten();
+    showToast(`✓ ${aktualisiert} Ergebnis(se) automatisch eingetragen`);
+  }
+  return aktualisiert;
+}
+
+// Auto-Check beim Start und alle 4 Stunden
+async function autoCheck() {
+  const result = await pruefeAutomatischeErgebnisse();
+  setTimeout(autoCheck, 4 * 60 * 60 * 1000);
+}
+
+
+// ============================================================
+// UPDATE BUTTON LOGIK
+// ============================================================
+function pruefeUpdateFaelligkeit() {
+  const btn = document.getElementById('update-btn');
+  const heute = new Date();
+  const wochentag = heute.getDay(); // 0=So, 1=Mo
+  const stunde = heute.getHours();
+
+  // Montag nach 6 Uhr = Update fällig
+  const updateFaellig = wochentag === 1 && stunde >= 6;
+  // Sonntag abend = Vorwarnung
+  const vorwarnung = wochentag === 0 && stunde >= 18;
+
+  if (updateFaellig) {
+    btn.style.display = 'block';
+    btn.style.background = '#ff4466';
+    btn.style.color = '#fff';
+    btn.textContent = '↻ UPDATE FÄLLIG – Montag';
+  } else if (vorwarnung) {
+    btn.style.display = 'block';
+    btn.style.background = '#ffaa00';
+    btn.style.color = '#000';
+    btn.textContent = '↻ UPDATE MORGEN FÄLLIG';
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function zeigeUpdateInfo() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <div class="modal-title">WÖCHENTLICHES UPDATE</div>
+      <div style="margin-bottom:16px;font-size:14px;color:var(--text2);line-height:1.7">
+        Führe jeden <strong style="color:var(--accent)">Montag</strong> dieses Script aus:<br><br>
+        <code style="background:var(--surface2);padding:8px 12px;border-radius:6px;display:block;font-size:12px;color:var(--accent)">python 16_woechentliches_update.py</code>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);margin-bottom:8px">DAS SCRIPT MACHT AUTOMATISCH:</div>
+        <div style="display:grid;gap:8px;font-size:13px">
+          <div>✓ Offene Wetten mit echten Ergebnissen befüllen</div>
+          <div>✓ Performance pro Liga analysieren</div>
+          <div>✓ Strategie-Schwellenwerte anpassen</div>
+          <div>✓ Vorschau kommende Woche erstellen</div>
+          <div>✓ Fazit: Weitermachen / Pausieren</div>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="this.parentElement.parentElement.remove()">Verstanden</button>
+    </div>`;
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+// ============================================================
+// WM 2026 LOGIK
+// ============================================================
+
+function berechneWMCountdown() {
+  const wmStart = new Date('2026-06-11');
+  const heute = new Date();
+  const diff = Math.ceil((wmStart - heute) / (1000 * 60 * 60 * 24));
+  document.getElementById('wm-tage').textContent = diff > 0 ? diff : 'LÄUFT';
+}
+
+async function ladeWMSpiele() {
+  const liste = document.getElementById('wm-spiele-liste');
+
+  // WM 2026 URL (wird von football-data.co.uk hinzugefügt sobald verfügbar)
+  // Bis dahin: Qualifikationsspiele oder Placeholder
+  const wmUrl = 'https://www.football-data.co.uk/new/WC.csv';
+
+  try {
+    liste.innerHTML = '<div class="loading"><div class="spinner"></div>Lade WM-Daten...</div>';
+    const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(wmUrl);
+    const res = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
+    const text = await res.text();
+    const spiele = parseCSV(text);
+
+    if (spiele.length === 0) throw new Error('Keine Daten');
+
+    // Kommende Spiele
+    const kommend = spiele.filter(s => !s.FTHG || s.FTHG === '');
+    const gespielt = spiele.filter(s => s.FTHG && s.FTHG !== '');
+
+    if (kommend.length > 0) {
+      liste.innerHTML = kommend.slice(0,10).map(s => {
+        const qU = parseFloat(s['Avg<2.5'] || s['B365<2.5'] || 0);
+        const qO = parseFloat(s['Avg>2.5'] || s['B365>2.5'] || 0);
+        const impl = (qU > 1 && qO > 1) ? (1/qU)/(1/qU+1/qO) : 0;
+        const signal = impl > 0.50;
+        return `
+          <div class="empf-card ${signal ? 'stark' : ''}" style="margin-bottom:8px">
+            <div class="empf-teams">${s.HomeTeam} vs ${s.AwayTeam}</div>
+            <div class="empf-meta">
+              <span style="color:#ffaa00">WM 2026</span>
+              <span>${s.Date || ''}</span>
+              ${qO > 1 ? `<span>Über @ ${qO.toFixed(2)}</span>` : ''}
+              ${signal ? '<span style="color:var(--accent)">★ SIGNAL</span>' : ''}
+            </div>
+          </div>`;
+      }).join('');
+    } else {
+      liste.innerHTML = '<div style="color:var(--text2);text-align:center;padding:20px;font-size:13px">WM-Spieldaten noch nicht verfügbar.<br>Ab Juni 2026 automatisch hier.</div>';
+    }
+  } catch(e) {
+    liste.innerHTML = `
+      <div style="text-align:center;padding:20px">
+        <div style="font-size:32px;margin-bottom:8px">⏳</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:#ffaa00;letter-spacing:2px">WM STARTET IN ${document.getElementById('wm-tage').textContent} TAGEN</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:8px">Spieldaten und Quoten erscheinen ab Juni 2026 automatisch.</div>
+      </div>`;
+  }
+}
+
+async function ladeWMHistorik() {
+  const div = document.getElementById('wm-historik');
+
+  // Historische WM-Daten von football-data.co.uk
+  const wmJahre = [
+    { jahr: '2022', url: 'https://www.football-data.co.uk/new/WC.csv' },
+  ];
+
+  // Bekannte WM-Statistiken aus unserer Analyse
+  const historik = [
+    { wm: 'WM 2022 Katar', spiele: 64, ueber25: '46.9%', avg_tore: '2.69', best_strategie: 'K.O.-Phase Über 2.5' },
+    { wm: 'WM 2018 Russland', spiele: 64, ueber25: '54.7%', avg_tore: '2.64', best_strategie: 'Gruppenphase Über 2.5' },
+    { wm: 'WM 2014 Brasilien', spiele: 64, ueber25: '65.6%', avg_tore: '2.67', best_strategie: 'Alle Phasen Über 2.5' },
+    { wm: 'WM 2010 Südafrika', spiele: 64, ueber25: '42.2%', avg_tore: '2.27', best_strategie: 'Unter 2.5 dominant' },
+  ];
+
+  div.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:8px;font-family:'Space Mono',monospace;font-size:10px;color:var(--text2)">TURNIER</th>
+          <th style="text-align:center;padding:8px;font-family:'Space Mono',monospace;font-size:10px;color:var(--text2)">ÜBER 2.5</th>
+          <th style="text-align:center;padding:8px;font-family:'Space Mono',monospace;font-size:10px;color:var(--text2)">Ø TORE</th>
+          <th style="text-align:left;padding:8px;font-family:'Space Mono',monospace;font-size:10px;color:var(--text2)">BESTE STRATEGIE</th>
+        </tr>
+        ${historik.map(h => `
+          <tr style="border-bottom:1px solid rgba(42,42,58,.4)">
+            <td style="padding:10px 8px;font-weight:600">${h.wm}</td>
+            <td style="padding:10px 8px;text-align:center;font-family:'Bebas Neue',sans-serif;font-size:18px;color:${parseFloat(h.ueber25)>50?'var(--accent)':'var(--accent2)'}">${h.ueber25}</td>
+            <td style="padding:10px 8px;text-align:center;font-family:'Space Mono',monospace">${h.avg_tore}</td>
+            <td style="padding:10px 8px;font-size:11px;color:var(--text2)">${h.best_strategie}</td>
+          </tr>`).join('')}
+      </table>
+    </div>
+    <div style="margin-top:12px;padding:12px;background:rgba(255,170,0,.1);border:1px solid rgba(255,170,0,.3);border-radius:8px;font-size:12px">
+      <strong style="color:#ffaa00">WM 2026 Prognose:</strong>
+      <span style="color:var(--text2)"> 48 Teams, 104 Spiele. Mehr Gruppenspiele = mehr taktische Muster. Historisch zeigt K.O.-Phase höhere Über-2.5-Rate als Gruppenphase.</span>
+    </div>`;
+}
+
+function initWM() {
+  berechneWMCountdown();
+  ladeWMHistorik();
+}
+
+init();
+setTimeout(autoCheck, 5000);
+pruefeUpdateFaelligkeit();
+setInterval(pruefeUpdateFaelligkeit, 60*60*1000);
+setTimeout(initWM, 1000); // Auto-Check nach 5 Sek
+</script>
+</body>
+</html>
