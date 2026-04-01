@@ -2,17 +2,15 @@ name: Daily Football Update
 
 on:
   schedule:
-    # Läuft täglich um 08:00 UTC (= 09:00 MEZ / 10:00 MESZ)
-    - cron: '0 8 * * *'
-    # Zusätzlich Sa+So um 10:00 UTC für Spieltag-Check
-    - cron: '0 10 * * 6,0'
-  # Manuell ausführbar (Button auf GitHub)
-  workflow_dispatch:
+    - cron: '0 8 * * *'      # Täglich 09:00 MEZ
+    - cron: '0 10 * * 6,0'   # Sa+So zusätzlich 11:00 MEZ
+  workflow_dispatch:           # Manuell ausführbar
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 10
+
     steps:
       - name: Repository laden
         uses: actions/checkout@v4
@@ -21,17 +19,59 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Pakete installieren
         run: pip install requests pandas numpy
 
       - name: Daily Update ausführen
+        id: update
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: python 17_daily_update.py
 
-      - name: Log speichern
+      - name: Erfolg loggen
+        if: success()
+        run: |
+          echo "✓ $(date '+%d.%m.%Y %H:%M') - Update erfolgreich" >> update_log.txt
+          cat update_log.txt | tail -20 > update_log_tmp.txt
+          mv update_log_tmp.txt update_log.txt
+
+      - name: Fehler-Benachrichtigung via Supabase
+        if: failure()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python3 << 'EOF'
+          import requests, os, json
+          from datetime import datetime
+          url = os.environ.get('SUPABASE_URL', '') + '/rest/v1/notifications'
+          key = os.environ.get('SUPABASE_KEY', '')
+          headers = {
+            'apikey': key,
+            'Authorization': f'Bearer {key}',
+            'Content-Type': 'application/json'
+          }
+          daten = {
+            'typ': 'fehler',
+            'nachricht': f'GitHub Actions fehlgeschlagen am {datetime.now().strftime("%d.%m.%Y %H:%M")}',
+            'gelesen': False
+          }
+          try:
+            requests.post(url, headers=headers, json=daten, timeout=5)
+            print("Fehler-Benachrichtigung gespeichert")
+          except:
+            print("Konnte Benachrichtigung nicht speichern")
+          EOF
+
+      - name: Log committen
         if: always()
-        run: echo "Update abgeschlossen $(date)" >> update_log.txt
+        run: |
+          git config user.name "Football Bot"
+          git config user.email "bot@predictive-football.com"
+          git add update_log.txt || true
+          git diff --staged --quiet || git commit -m "Auto: Update Log $(date '+%d.%m.%Y')"
+          git push || true
