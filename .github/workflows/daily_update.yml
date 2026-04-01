@@ -1,0 +1,65 @@
+name: Daily Football Update
+
+on:
+  schedule:
+    - cron: '0 8 * * *'      # Täglich 09:00 MEZ
+    - cron: '0 10 * * 6,0'   # Sa+So zusätzlich 11:00 MEZ
+  workflow_dispatch:           # Manuell ausführbar
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Repository laden
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Pakete installieren
+        run: pip install requests pandas numpy
+
+      - name: Daily Update ausführen
+        id: update
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: python 17_daily_update.py
+
+      - name: Erfolg loggen
+        if: success()
+        run: |
+          echo "$(date '+%d.%m.%Y %H:%M') - Update erfolgreich" >> update_log.txt
+
+      - name: Fehler-Benachrichtigung via Supabase
+        if: failure()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python3 -c "
+          import requests, os
+          from datetime import datetime
+          url = os.environ.get('SUPABASE_URL','') + '/rest/v1/notifications'
+          key = os.environ.get('SUPABASE_KEY','')
+          headers = {'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'}
+          requests.post(url, headers=headers, json={'typ':'fehler','nachricht':'GitHub Actions fehlgeschlagen am ' + datetime.now().strftime('%d.%m.%Y %H:%M'),'gelesen':False}, timeout=5)
+          print('Fehler gemeldet')
+          "
+
+      - name: Log speichern
+        if: always()
+        run: |
+          git config user.name "Football Bot"
+          git config user.email "bot@football.com"
+          git add update_log.txt 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "Auto Log $(date '+%d.%m.%Y')"
+          git push 2>/dev/null || true
