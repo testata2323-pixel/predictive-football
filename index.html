@@ -178,6 +178,10 @@ header{border-bottom:1px solid var(--border);padding:16px 0;background:rgba(10,1
   background: rgba(0,255,136,0.08);
 }
 
+@media(max-width:400px){
+  .nav-item{padding:4px 6px}
+  .nav-label{font-size:8px;letter-spacing:0}
+}
 @media(min-width:600px){
   .strat-grid{grid-template-columns:repeat(4,1fr)}
   .bankroll-grid{grid-template-columns:repeat(4,1fr)}
@@ -759,11 +763,11 @@ function updateChart(bankroll) {
 // EMPFEHLUNGEN
 // ============================================================
 const STRATEGIEN = {
-  'Premier_League': { minImpl: 0.50, tage: [0], name: 'Premier League' },
+  'Premier_League': { minImpl: 0.50, tage: [4,6,0], name: 'Premier League' },
   '2_Bundesliga':   { minImpl: 0.50, tage: [0,6], name: '2. Bundesliga' },
   'Scottish_Prem':  { minImpl: 0.50, tage: [0], name: 'Scottish Prem' },
   'Eredivisie':     { minImpl: 0.55, tage: [0,1,2,3,4,5,6], name: 'Eredivisie' },
-  'Championship':   { minImpl: 0.50, tage: [0], name: 'Championship' },
+  'Championship':   { minImpl: 0.50, tage: [4,6,0], name: 'Championship' },
 };
 
 const LIGA_URLS = {
@@ -1288,7 +1292,7 @@ function showPage(name, el) {
 }
 
 function openModal(id) {
-  if (id === 'wette-modal') resetWetteForm();
+  if (id === 'wette-modal') { resetWetteForm(); initAutocomplete(); }
   document.getElementById(id).classList.add('active');
 }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
@@ -1969,7 +1973,7 @@ document.addEventListener('change', e => {
 
 init();
 setTimeout(autoCheck, 5000);
-setTimeout(initAutocomplete, 500);
+// initAutocomplete wird beim Öffnen des Modals aufgerufen
 pruefeUpdateFaelligkeit();
 setInterval(pruefeUpdateFaelligkeit, 60*60*1000);
 setTimeout(initWM, 1000);
