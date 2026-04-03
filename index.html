@@ -29,11 +29,11 @@ header{border-bottom:1px solid var(--border);padding:16px 0;background:rgba(10,1
 .header-status{font-family:'Space Mono',monospace;font-size:10px;color:var(--accent);display:flex;align-items:center}
 
 /* BOTTOM NAV */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(10,10,15,.97);border-top:1px solid var(--border);backdrop-filter:blur(20px);z-index:200;display:flex;justify-content:space-around;padding:8px 0 max(8px,env(safe-area-inset-bottom))}
-.nav-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 16px;cursor:pointer;border:none;background:none;color:var(--text2);transition:color .2s;font-family:'DM Sans',sans-serif}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(10,10,15,.97);border-top:1px solid var(--border);backdrop-filter:blur(20px);z-index:200;display:flex;justify-content:space-around;overflow-x:auto;padding:8px 0 max(8px,env(safe-area-inset-bottom))}
+.nav-item{flex:0 0 auto;min-width:60px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 8px;cursor:pointer;border:none;background:none;color:var(--text2);transition:color .2s;font-family:'DM Sans',sans-serif}
 .nav-item.active{color:var(--accent)}
 .nav-icon{font-size:20px}
-.nav-label{font-size:10px;font-family:'Space Mono',monospace;letter-spacing:1px}
+.nav-label{font-size:8px;font-family:'Space Mono',monospace;letter-spacing:1px}
 
 /* PAGES */
 .page{display:none;padding:20px 0}
@@ -823,6 +823,7 @@ async function ladeEmpfehlungen() {
   container.innerHTML = '<div class="loading"><div class="spinner"></div>Lade aktuelle Spiele...</div>';
 
   const empfehlungen = [];
+  console.log('Lade Empfehlungen, Datum:', new Date().toISOString(), 'Wochentag:', new Date().getDay());
   const bankroll = berecheBankroll();
 
   // PERFORMANCE: Alle Ligen parallel laden
@@ -875,7 +876,12 @@ async function ladeEmpfehlungen() {
   document.getElementById('signal-count').textContent = empfehlungen.length + ' Signale';
 
   if (empfehlungen.length === 0) {
-    const html = `<div class="empty"><div class="empty-icon">📡</div><div class="empty-title">KEINE SIGNALE</div><div style="font-size:13px">Signale erscheinen wenn passende Spiele mit Quoten verfügbar sind (meist Fr/Sa für Wochenende)</div></div>`;
+    const ligaStats = ligaErgebnisse.map(({ liga, spiele }) => {
+      const name = STRATEGIEN[liga] ? STRATEGIEN[liga].name : liga;
+      const offen = spiele.filter(s => !s.FTHG || s.FTHG === '').length;
+      return `${name}: ${offen}`;
+    }).join(' | ');
+    const html = `<div class="empty"><div class="empty-icon">📡</div><div class="empty-title">KEINE SIGNALE</div><div style="font-size:13px">Quoten werden freitags ab 14:00 Uhr aktualisiert.</div><div style="font-size:11px;color:var(--text2);margin-top:8px;font-family:'Space Mono',monospace">Aktuelle Spieldaten: ${ligaStats}</div></div>`;
     container.innerHTML = html;
     dashContainer.innerHTML = html;
     return;
