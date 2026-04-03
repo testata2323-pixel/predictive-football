@@ -787,7 +787,7 @@ async function fetchMitCache(url) {
   if (CSV_CACHE[url] && (jetzt - CSV_CACHE[url].zeit) < CACHE_DAUER) {
     return CSV_CACHE[url].daten;
   }
-  const proxy = 'https://corsproxy.io/?' + encodeURIComponent(url);
+  const proxy = 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
   const proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
   let text;
   try {
