@@ -763,11 +763,11 @@ function updateChart(bankroll) {
 // EMPFEHLUNGEN
 // ============================================================
 const STRATEGIEN = {
-  'Premier_League': { minImpl: 0.50, tage: [4,6,0], name: 'Premier League' },
+  'Premier_League': { minImpl: 0.50, tage: [5,6,0], name: 'Premier League' },
   '2_Bundesliga':   { minImpl: 0.50, tage: [0,6], name: '2. Bundesliga' },
   'Scottish_Prem':  { minImpl: 0.50, tage: [0], name: 'Scottish Prem' },
   'Eredivisie':     { minImpl: 0.55, tage: [0,1,2,3,4,5,6], name: 'Eredivisie' },
-  'Championship':   { minImpl: 0.50, tage: [4,6,0], name: 'Championship' },
+  'Championship':   { minImpl: 0.50, tage: [5,6,0], name: 'Championship' },
 };
 
 const LIGA_URLS = {
@@ -875,13 +875,20 @@ async function ladeEmpfehlungen() {
   empfehlungen.sort((a,b) => a.spielDatum - b.spielDatum);
   document.getElementById('signal-count').textContent = empfehlungen.length + ' Signale';
 
+  // DEBUG: Geladene Spiele zählen
+  const gesamtSpiele = ligaErgebnisse.reduce((sum, { spiele }) => sum + spiele.filter(s => !s.FTHG || s.FTHG === '').length, 0);
+  const debugHeader = `<div style="background:rgba(68,136,255,.1);border:1px solid rgba(68,136,255,.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-family:'Space Mono',monospace;font-size:10px;color:var(--accent3)">
+    📊 ${gesamtSpiele} Spiele geladen | ${empfehlungen.length} Signale gefunden | Wochentag: ${['So','Mo','Di','Mi','Do','Fr','Sa'][new Date().getDay()]} (${new Date().getDay()})
+    <br>${ligaErgebnisse.map(({liga,spiele})=>`${STRATEGIEN[liga]?.name||liga}: ${spiele.filter(s=>!s.FTHG||s.FTHG==='').length} offen`).join(' · ')}
+  </div>`;
+
   if (empfehlungen.length === 0) {
     const ligaStats = ligaErgebnisse.map(({ liga, spiele }) => {
       const name = STRATEGIEN[liga] ? STRATEGIEN[liga].name : liga;
       const offen = spiele.filter(s => !s.FTHG || s.FTHG === '').length;
       return `${name}: ${offen}`;
     }).join(' | ');
-    const html = `<div class="empty"><div class="empty-icon">📡</div><div class="empty-title">KEINE SIGNALE</div><div style="font-size:13px">Quoten werden freitags ab 14:00 Uhr aktualisiert.</div><div style="font-size:11px;color:var(--text2);margin-top:8px;font-family:'Space Mono',monospace">Aktuelle Spieldaten: ${ligaStats}</div></div>`;
+    const html = debugHeader + `<div class="empty"><div class="empty-icon">📡</div><div class="empty-title">KEINE SIGNALE</div><div style="font-size:13px">Quoten werden freitags ab 14:00 Uhr aktualisiert.</div><div style="font-size:11px;color:var(--text2);margin-top:8px;font-family:'Space Mono',monospace">Aktuelle Spieldaten: ${ligaStats}</div></div>`;
     container.innerHTML = html;
     dashContainer.innerHTML = html;
     return;
@@ -974,7 +981,7 @@ async function ladeEmpfehlungen() {
     </div>`;
   }).join('');
 
-  container.innerHTML = html;
+  container.innerHTML = debugHeader + html;
   dashContainer.innerHTML = empfehlungen.slice(0,2).map((e, idx) => {
     const rang = idx < 3 ? RANG_CONFIG[idx] : null;
     const borderStyle = rang ? `border-color:${rang.border};box-shadow:0 0 10px ${rang.border}33;background:${rang.bg}` : '';
