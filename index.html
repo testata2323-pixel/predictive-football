@@ -888,8 +888,11 @@ async function ladeEmpfehlungen() {
         const dateParts = s.Date.split('/');
         let spielDatum;
         try {
-          spielDatum = new Date(`20${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`);
+          // Beide Formate: DD/MM/YY (2-stellig) und DD/MM/YYYY (4-stellig)
+          const jahr = dateParts[2].length === 4 ? dateParts[2] : '20' + dateParts[2];
+          spielDatum = new Date(`${jahr}-${dateParts[1]}-${dateParts[0]}`);
         } catch(e) { return; }
+        if (isNaN(spielDatum.getTime())) return;
 
         const tag = spielDatum.getDay();
         if (impl < strat.minImpl) return;
