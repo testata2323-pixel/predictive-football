@@ -950,10 +950,11 @@ async function ladeEmpfehlungen() {
         let spielDatum;
         try {
           const jahr = dateParts[2].length === 4 ? dateParts[2] : '20' + dateParts[2];
-          spielDatum = new Date(`${jahr}-${dateParts[1]}-${dateParts[0]}`);
+          const [sh, sm] = s.Time ? s.Time.split(':').map(Number) : [23, 59];
+          spielDatum = new Date(parseInt(jahr), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]), sh || 23, sm || 59);
         } catch(e) { return; }
         if (isNaN(spielDatum.getTime())) return;
-        if (spielDatum < heute) return;
+        if (spielDatum <= new Date()) return;
 
         const tag = spielDatum.getDay();
         if (!strat.tage.includes(tag)) return;
