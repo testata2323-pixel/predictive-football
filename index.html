@@ -908,6 +908,7 @@ async function ladeEmpfehlungen() {
   container.innerHTML = '<div class="loading"><div class="spinner"></div>Lade aktuelle Spiele...</div>';
 
   const empfehlungen = [];
+  const ohneQuoten = [];
   console.log('Lade Empfehlungen, Datum:', new Date().toISOString(), 'Wochentag:', new Date().getDay());
   const bankroll = berecheBankroll();
 
@@ -943,13 +944,8 @@ async function ladeEmpfehlungen() {
       const heute = new Date(); heute.setHours(0,0,0,0);
 
       spiele.forEach(s => {
-        if (!s['Avg<2.5'] || !s['Avg>2.5'] || !s.Date) return;
+        if (!s.Date || !s.HomeTeam || !s.AwayTeam) return;
 
-        const qU = parseFloat(s['Avg<2.5']);
-        const qO = parseFloat(s['Avg>2.5']);
-        if (isNaN(qU) || isNaN(qO) || qU <= 1 || qO <= 1) return;
-
-        const impl = (1/qU) / (1/qU + 1/qO);
         const dateParts = s.Date.split('/');
         let spielDatum;
         try {
@@ -957,13 +953,23 @@ async function ladeEmpfehlungen() {
           spielDatum = new Date(`${jahr}-${dateParts[1]}-${dateParts[0]}`);
         } catch(e) { return; }
         if (isNaN(spielDatum.getTime())) return;
-
-        // Nur zukünftige Spiele (ab heute) — nicht auf leeres FTHG angewiesen
         if (spielDatum < heute) return;
 
         const tag = spielDatum.getDay();
-        if (impl < strat.minImpl) return;
         if (!strat.tage.includes(tag)) return;
+
+        const qU = parseFloat(s['Avg<2.5']);
+        const qO = parseFloat(s['Avg>2.5']);
+        const hatQuoten = !isNaN(qU) && !isNaN(qO) && qU > 1 && qO > 1;
+
+        if (!hatQuoten) {
+          // Spiel ohne Quoten — als Platzhalter merken
+          ohneQuoten.push({ liga, ligaName: strat.name, heim: s.HomeTeam, ausw: s.AwayTeam, datum: s.Date, spielDatum });
+          return;
+        }
+
+        const impl = (1/qU) / (1/qU + 1/qO);
+        if (impl < strat.minImpl) return;
 
         const edge = (impl - strat.minImpl) * 100;
         empfehlungen.push({
@@ -1101,7 +1107,29 @@ async function ladeEmpfehlungen() {
     </div>`;
   }).join('');
 
-  container.innerHTML = debugHeader + html;
+  // Spiele ohne Quoten als grau-Karten anhängen
+  const ohneQuotenHtml = ohneQuoten.length > 0 ? `
+    <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);letter-spacing:2px;margin:16px 0 8px;padding-top:${empfehlungen.length>0?'16px':'0'};${empfehlungen.length>0?'border-top:1px solid var(--border)':''}">
+      WEITERE SPIELE — QUOTEN FEHLEN NOCH (${ohneQuoten.length})
+    </div>` +
+    ohneQuoten.map(e => `
+    <div class="empf-card" style="opacity:0.5;margin-bottom:8px;cursor:pointer"
+      onclick="openWetteVonEmpf('${e.liga}','${e.heim}','${e.ausw}','${e.datum}',0,0)">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div class="empf-teams" style="color:var(--text2)">${e.heim} vs ${e.ausw}</div>
+          <div class="empf-meta" style="margin-top:4px">
+            <span style="color:var(--accent3)">${e.ligaName}</span>
+            <span>${e.datum}</span>
+          </div>
+        </div>
+        <div style="background:rgba(136,136,170,.15);border:1px solid rgba(136,136,170,.3);border-radius:20px;padding:3px 10px;font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);white-space:nowrap">
+          QUOTEN FEHLEN
+        </div>
+      </div>
+    </div>`).join('') : '';
+
+  container.innerHTML = debugHeader + html + ohneQuotenHtml;
   dashContainer.innerHTML = empfehlungen.slice(0,2).map((e, idx) => {
     const rang = idx < 3 ? RANG_CONFIG[idx] : null;
     const borderStyle = rang ? `border-color:${rang.border};box-shadow:0 0 10px ${rang.border}33;background:${rang.bg}` : '';
