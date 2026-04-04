@@ -1,63 +1,76 @@
 import requests
+import csv
+import io
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 SUPABASE_URL = "https://yloudwrsmpbtxovxozqm.supabase.co"
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_E43hus55ruODU1i0G8FLjg_TLVAoghZ")
-API_KEY = os.environ.get("API_FOOTBALL_KEY", "")
 
-API_BASE = "https://v3.football.api-sports.io"
-API_HEADERS = {
-    "x-apisports-key": API_KEY,
-}
+FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
 
 LIGEN = {
-    "Premier_League": 39,
-    "Championship":   40,
-    "2_Bundesliga":   81,
-    "Scottish_Prem":  179,
-    "Eredivisie":     88,
+    "Premier_League": "https://www.football-data.co.uk/mmz4281/2526/E0.csv",
+    "Championship":   "https://www.football-data.co.uk/mmz4281/2526/E1.csv",
+    "2_Bundesliga":   "https://www.football-data.co.uk/mmz4281/2526/D2.csv",
+    "Scottish_Prem":  "https://www.football-data.co.uk/mmz4281/2526/SC0.csv",
+    "Eredivisie":     "https://www.football-data.co.uk/mmz4281/2526/N1.csv",
 }
 
-SAISON = 2025  # aktuelle Saison 2025/26
+DIV_TO_LIGA = {
+    "E0":  "Premier_League",
+    "E1":  "Championship",
+    "D2":  "2_Bundesliga",
+    "SC0": "Scottish_Prem",
+    "N1":  "Eredivisie",
+}
 
 
-def fetch_fixtures(league_id):
-    heute = datetime.now().strftime("%Y-%m-%d")
-    bis = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
-    r = requests.get(
-        f"{API_BASE}/fixtures",
-        headers=API_HEADERS,
-        params={"league": league_id, "season": SAISON, "from": heute, "to": bis, "status": "NS"},
-        timeout=15,
-    )
+def fetch_csv(url):
+    r = requests.get(url, timeout=15)
     r.raise_for_status()
-    data = r.json()
-    if data.get("errors"):
-        print(f"  API Fehler: {data['errors']}")
-        return []
-    return data.get("response", [])
+    return csv.DictReader(io.StringIO(r.content.decode("utf-8-sig")))
 
 
-def fetch_odds(fixture_id):
-    r = requests.get(
-        f"{API_BASE}/odds",
-        headers=API_HEADERS,
-        params={"fixture": fixture_id, "bet": 5},  # bet 5 = Goals Over/Under
-        timeout=15,
-    )
-    r.raise_for_status()
-    data = r.json()
-    bookmakers = data.get("response", [{}])[0].get("bookmakers", []) if data.get("response") else []
-    for bm in bookmakers:
-        for bet in bm.get("bets", []):
-            if "over" in bet.get("name", "").lower() or bet.get("id") == 5:
-                values = {v["value"]: float(v["odd"]) for v in bet.get("values", [])}
-                over = values.get("Over 2.5") or values.get("Over")
-                under = values.get("Under 2.5") or values.get("Under")
-                if over and under:
-                    return round(over, 2), round(under, 2)
-    return None, None
+def fetch_fixtures():
+    print("Lade fixtures.csv...")
+    reader = fetch_csv(FIXTURES_URL)
+    nach_liga = {liga: [] for liga in DIV_TO_LIGA.values()}
+    for row in reader:
+        liga = DIV_TO_LIGA.get(row.get("Div", "").strip())
+        if not liga or not row.get("HomeTeam") or not row.get("AwayTeam"):
+            continue
+        nach_liga[liga].append({
+            "HomeTeam": row["HomeTeam"].strip(),
+            "AwayTeam": row["AwayTeam"].strip(),
+            "Date":     row.get("Date", "").strip(),
+            "Time":     row.get("Time", "").strip(),
+        })
+    for liga, spiele in nach_liga.items():
+        print(f"  {liga}: {len(spiele)} Fixtures")
+    return nach_liga
+
+
+def fetch_odds(liga, url):
+    print(f"Lade Saison-CSV für {liga}...")
+    reader = fetch_csv(url)
+    odds = {}
+    for row in reader:
+        heim = row.get("HomeTeam", "").strip()
+        ausw = row.get("AwayTeam", "").strip()
+        if not heim or not ausw:
+            continue
+        avg_over  = row.get("Avg>2.5", "").strip()
+        avg_under = row.get("Avg<2.5", "").strip()
+        b365_over  = row.get("B365>2.5", "").strip()
+        b365_under = row.get("B365<2.5", "").strip()
+        key = (heim.lower(), ausw.lower())
+        odds[key] = {
+            "Avg>2.5": avg_over  or b365_over,
+            "Avg<2.5": avg_under or b365_under,
+        }
+    print(f"  {len(odds)} Spiele mit Quoten im Saison-CSV")
+    return odds
 
 
 def save_to_supabase(liga_key, spiele):
@@ -77,54 +90,34 @@ def save_to_supabase(liga_key, spiele):
         headers=headers,
         json=data,
     )
-    print(f"  Supabase {liga_key}: HTTP {r.status_code} — {len(spiele)} Spiele gespeichert")
+    print(f"  Supabase {liga_key}: HTTP {r.status_code} — {len(spiele)} Spiele")
     if r.status_code not in [200, 201]:
         print(f"  Fehler: {r.text}")
 
 
-if not API_KEY:
-    print("FEHLER: API_FOOTBALL_KEY nicht gesetzt.")
-    exit(1)
+fixtures_nach_liga = fetch_fixtures()
 
-# Verbleibende API-Anfragen prüfen
-status = requests.get(f"{API_BASE}/status", headers=API_HEADERS, timeout=10).json()
-print(f"API Status: {status.get('response', {}).get('requests', {})}")
-
-for liga_name, league_id in LIGEN.items():
-    print(f"\n[{liga_name}] Lade Fixtures (league={league_id})...")
-    fixtures = fetch_fixtures(league_id)
-    print(f"  {len(fixtures)} Spiele gefunden")
+for liga, saison_url in LIGEN.items():
+    fixtures = fixtures_nach_liga.get(liga, [])
+    odds = fetch_odds(liga, saison_url)
 
     spiele = []
-    for fix in fixtures:
-        f = fix.get("fixture", {})
-        teams = fix.get("teams", {})
-        fixture_id = f.get("id")
-        date_str = f.get("date", "")  # ISO: "2026-04-06T14:00:00+00:00"
-
-        # Datum in DD/MM/YYYY + Zeit umwandeln
-        try:
-            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-            date_fmt = dt.strftime("%d/%m/%Y")
-            time_fmt = dt.strftime("%H:%M")
-        except Exception:
-            date_fmt = date_str[:10]
-            time_fmt = ""
-
-        # Quoten laden
-        qO, qU = fetch_odds(fixture_id)
-        print(f"  {teams.get('home',{}).get('name')} vs {teams.get('away',{}).get('name')} {date_fmt} {time_fmt} — Über:{qO} Unter:{qU}")
-
+    matched = 0
+    for f in fixtures:
+        key = (f["HomeTeam"].lower(), f["AwayTeam"].lower())
+        o = odds.get(key, {})
+        if o.get("Avg>2.5") or o.get("Avg<2.5"):
+            matched += 1
         spiele.append({
-            "HomeTeam": teams.get("home", {}).get("name", ""),
-            "AwayTeam": teams.get("away", {}).get("name", ""),
-            "Date":     date_fmt,
-            "Time":     time_fmt,
-            "Avg>2.5":  str(qO) if qO else "",
-            "Avg<2.5":  str(qU) if qU else "",
+            "HomeTeam": f["HomeTeam"],
+            "AwayTeam": f["AwayTeam"],
+            "Date":     f["Date"],
+            "Time":     f["Time"],
+            "Avg>2.5":  o.get("Avg>2.5", ""),
+            "Avg<2.5":  o.get("Avg<2.5", ""),
         })
 
-    key = f"fix_{liga_name}"
-    save_to_supabase(key, spiele)
+    print(f"  {liga}: {len(spiele)} Fixtures, {matched} mit Quoten gematcht")
+    save_to_supabase(f"fix_{liga}", spiele)
 
 print("\nFertig.")
