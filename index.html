@@ -876,6 +876,41 @@ function parseCSV(text) {
   }).filter(r => r.HomeTeam && r.AwayTeam);
 }
 
+// League-Code in fixtures.csv → unser Liga-Key
+const FIXTURES_LIGA_MAP = { 'E0':'Premier_League', 'E1':'Championship', 'D2':'2_Bundesliga', 'SC0':'Scottish_Prem', 'N1':'Eredivisie' };
+const FIXTURES_URL = 'https://www.football-data.co.uk/fixtures.csv';
+
+async function ladeFixtures() {
+  const proxy1 = 'https://corsproxy.io/?' + encodeURIComponent(FIXTURES_URL);
+  const proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(FIXTURES_URL);
+  let text;
+  try {
+    const r = await fetch(proxy1, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error('p1 ' + r.status);
+    text = await r.text();
+  } catch(e) {
+    const r = await fetch(proxy2, { signal: AbortSignal.timeout(10000) });
+    text = await r.text();
+  }
+  const alle = parseCSV(text);
+  console.log('[fixtures.csv] Gesamt:', alle.length, '| erstes:', JSON.stringify(alle[0]));
+
+  // Nach Liga gruppieren
+  const nachLiga = {};
+  Object.values(FIXTURES_LIGA_MAP).forEach(k => nachLiga[k] = []);
+  alle.forEach(s => {
+    const liga = FIXTURES_LIGA_MAP[s.Div || s.League || s.league];
+    if (liga) {
+      nachLiga[liga].push({
+        ...s,
+        'Avg>2.5': s['B365>2.5'] || s['Avg>2.5'] || s['BbAv>2.5'] || '',
+        'Avg<2.5': s['B365<2.5'] || s['Avg<2.5'] || s['BbAv<2.5'] || '',
+      });
+    }
+  });
+  return nachLiga;
+}
+
 async function ladeEmpfehlungen() {
   const container = document.getElementById('empf-liste');
   const dashContainer = document.getElementById('dash-signale');
@@ -885,19 +920,34 @@ async function ladeEmpfehlungen() {
   console.log('Lade Empfehlungen, Datum:', new Date().toISOString(), 'Wochentag:', new Date().getDay());
   const bankroll = berecheBankroll();
 
-  // PERFORMANCE: Alle Ligen parallel laden
-  const ligaPromises = Object.entries(LIGA_URLS).map(async ([liga, url]) => {
-    try {
-      const spiele = await fetchMitCache(url);
-      return { liga, spiele };
-    } catch(e) { return { liga, spiele: [] }; }
-  });
-  const ligaErgebnisse = await Promise.all(ligaPromises);
+  // fixtures.csv laden (anstehende Spiele aller Ligen)
+  let fixturesNachLiga = {};
+  try {
+    fixturesNachLiga = await ladeFixtures();
+  } catch(e) {
+    console.log('[fixtures] Fehler:', e.message);
+  }
+
+  // Fallback auf Saison-CSVs wenn fixtures leer
+  const totalFixtures = Object.values(fixturesNachLiga).reduce((s,a)=>s+a.length,0);
+  console.log('[fixtures] Spiele pro Liga:', Object.entries(fixturesNachLiga).map(([k,v])=>`${k}:${v.length}`).join(' '));
+
+  let ligaErgebnisse;
+  if (totalFixtures > 0) {
+    ligaErgebnisse = Object.entries(fixturesNachLiga).map(([liga, spiele]) => ({ liga, spiele }));
+  } else {
+    console.log('[fixtures] Leer → Fallback auf Saison-CSVs');
+    const ligaPromises = Object.entries(LIGA_URLS).map(async ([liga, url]) => {
+      try { return { liga, spiele: await fetchMitCache(url) }; }
+      catch(e) { return { liga, spiele: [] }; }
+    });
+    ligaErgebnisse = await Promise.all(ligaPromises);
+  }
 
   for (const { liga, spiele } of ligaErgebnisse) {
     try {
-      const _ = spiele; // bereits geladen
       const strat = STRATEGIEN[liga];
+      if (!strat) continue;
 
       const heute = new Date(); heute.setHours(0,0,0,0);
 
