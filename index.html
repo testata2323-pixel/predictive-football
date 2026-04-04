@@ -899,9 +899,10 @@ async function ladeEmpfehlungen() {
       const _ = spiele; // bereits geladen
       const strat = STRATEGIEN[liga];
 
+      const heute = new Date(); heute.setHours(0,0,0,0);
+
       spiele.forEach(s => {
         if (!s['Avg<2.5'] || !s['Avg>2.5'] || !s.Date) return;
-        if (s.FTHG && s.FTHG !== '') return; // bereits gespielt
 
         const qU = parseFloat(s['Avg<2.5']);
         const qO = parseFloat(s['Avg>2.5']);
@@ -911,11 +912,13 @@ async function ladeEmpfehlungen() {
         const dateParts = s.Date.split('/');
         let spielDatum;
         try {
-          // Beide Formate: DD/MM/YY (2-stellig) und DD/MM/YYYY (4-stellig)
           const jahr = dateParts[2].length === 4 ? dateParts[2] : '20' + dateParts[2];
           spielDatum = new Date(`${jahr}-${dateParts[1]}-${dateParts[0]}`);
         } catch(e) { return; }
         if (isNaN(spielDatum.getTime())) return;
+
+        // Nur zukünftige Spiele (ab heute) — nicht auf leeres FTHG angewiesen
+        if (spielDatum < heute) return;
 
         const tag = spielDatum.getDay();
         if (impl < strat.minImpl) return;
@@ -938,16 +941,30 @@ async function ladeEmpfehlungen() {
   document.getElementById('signal-count').textContent = empfehlungen.length + ' Signale';
 
   // DEBUG: Geladene Spiele zählen
-  const gesamtSpiele = ligaErgebnisse.reduce((sum, { spiele }) => sum + spiele.filter(s => !s.FTHG || s.FTHG === '').length, 0);
+  const heuteDbg = new Date(); heuteDbg.setHours(0,0,0,0);
+  const gesamtSpiele = ligaErgebnisse.reduce((sum, { spiele }) => sum + spiele.filter(s => {
+    if (!s.Date) return false;
+    const dp = s.Date.split('/'); if (dp.length < 3) return false;
+    const jahr = dp[2].length === 4 ? dp[2] : '20' + dp[2];
+    const d = new Date(`${jahr}-${dp[1]}-${dp[0]}`);
+    return !isNaN(d.getTime()) && d >= heuteDbg;
+  }).length, 0);
   const debugHeader = `<div style="background:rgba(68,136,255,.1);border:1px solid rgba(68,136,255,.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-family:'Space Mono',monospace;font-size:10px;color:var(--accent3)">
     📊 ${gesamtSpiele} Spiele geladen | ${empfehlungen.length} Signale gefunden | Wochentag: ${['So','Mo','Di','Mi','Do','Fr','Sa'][new Date().getDay()]} (${new Date().getDay()})
-    <br>${ligaErgebnisse.map(({liga,spiele})=>`${STRATEGIEN[liga]?.name||liga}: ${spiele.filter(s=>!s.FTHG||s.FTHG==='').length} offen`).join(' · ')}
+    <br>${ligaErgebnisse.map(({liga,spiele})=>{const h=new Date();h.setHours(0,0,0,0);return `${STRATEGIEN[liga]?.name||liga}: ${spiele.filter(s=>{if(!s.Date)return false;const dp=s.Date.split('/');if(dp.length<3)return false;const j=dp[2].length===4?dp[2]:'20'+dp[2];const d=new Date(`${j}-${dp[1]}-${dp[0]}`);return !isNaN(d.getTime())&&d>=h;}).length} zukünftig`;}).join(' · ')}
   </div>`;
 
   if (empfehlungen.length === 0) {
     const ligaStats = ligaErgebnisse.map(({ liga, spiele }) => {
       const name = STRATEGIEN[liga] ? STRATEGIEN[liga].name : liga;
-      const offen = spiele.filter(s => !s.FTHG || s.FTHG === '').length;
+      const h = new Date(); h.setHours(0,0,0,0);
+      const offen = spiele.filter(s => {
+        if (!s.Date) return false;
+        const dp = s.Date.split('/'); if (dp.length < 3) return false;
+        const j = dp[2].length === 4 ? dp[2] : '20' + dp[2];
+        const d = new Date(`${j}-${dp[1]}-${dp[0]}`);
+        return !isNaN(d.getTime()) && d >= h;
+      }).length;
       return `${name}: ${offen}`;
     }).join(' | ');
     const html = debugHeader + `<div class="empty"><div class="empty-icon">📡</div><div class="empty-title">KEINE SIGNALE</div><div style="font-size:13px">Quoten werden freitags ab 14:00 Uhr aktualisiert.</div><div style="font-size:11px;color:var(--text2);margin-top:8px;font-family:'Space Mono',monospace">Aktuelle Spieldaten: ${ligaStats}</div></div>`;
