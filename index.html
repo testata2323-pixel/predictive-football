@@ -808,8 +808,13 @@ async function fetchMitCache(url) {
   if (!res.ok) throw new Error('Supabase Fehler ' + res.status);
   const rows = await res.json();
   // Tabelle hat 1 Zeile pro Liga: { liga, spiele: [...], updated_at }
-  // spiele-Felder verwenden B365-Quoten → auf Avg-Namen mappen
-  const spiele = (rows[0]?.spiele || []).map(s => ({
+  const row0 = rows[0] || {};
+  let spieleRaw = row0.spiele || [];
+  // Fallback: spiele kann als JSON-String gespeichert sein
+  if (typeof spieleRaw === 'string') { try { spieleRaw = JSON.parse(spieleRaw); } catch(e) { spieleRaw = []; } }
+  console.log(`[${liga}] rows=${rows.length}, spiele=${spieleRaw.length}, erstes:`, spieleRaw[0] || 'leer');
+  // B365-Quoten auf Avg-Namen mappen
+  const spiele = spieleRaw.map(s => ({
     ...s,
     'Avg>2.5': s['B365>2.5'] || s['Avg>2.5'] || '',
     'Avg<2.5': s['B365<2.5'] || s['Avg<2.5'] || '',
