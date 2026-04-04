@@ -24,7 +24,7 @@ SAISON = 2024  # aktuelle Saison
 
 def fetch_fixtures(league_id):
     heute = datetime.now().strftime("%Y-%m-%d")
-    bis = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    bis = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
     r = requests.get(
         f"{API_BASE}/fixtures",
         headers=API_HEADERS,
