@@ -778,7 +778,18 @@ const LIGA_URLS = {
   'Championship':   'https://www.football-data.co.uk/mmz4281/2526/E1.csv',
 };
 
-// PERFORMANCE: Cache für CSV-Daten (4 Stunden)
+// Supabase
+const SB_URL = 'https://yloudwrsmpbtxovxozqm.supabase.co';
+const SB_KEY = 'sb_publishable_E43hus55ruODU1i0G8FLjg_TLVAoghZ';
+const CSV_TO_LIGA = {
+  'E0.csv':  'Premier_League',
+  'D2.csv':  '2_Bundesliga',
+  'SC0.csv': 'Scottish_Prem',
+  'N1.csv':  'Eredivisie',
+  'E1.csv':  'Championship',
+};
+
+// Cache für Spieldaten (4 Stunden)
 const CSV_CACHE = {};
 const CACHE_DAUER = 4 * 60 * 60 * 1000;
 
@@ -787,17 +798,15 @@ async function fetchMitCache(url) {
   if (CSV_CACHE[url] && (jetzt - CSV_CACHE[url].zeit) < CACHE_DAUER) {
     return CSV_CACHE[url].daten;
   }
-  const proxy = 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
-  const proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-  let text;
-  try {
-    const res = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
-    text = await res.text();
-  } catch(e) {
-    const res = await fetch(proxy2, { signal: AbortSignal.timeout(8000) });
-    text = await res.text();
-  }
-  const daten = parseCSV(text);
+  const filename = url.split('/').pop();
+  const liga = CSV_TO_LIGA[filename];
+  if (!liga) throw new Error('Unbekannte Liga-URL: ' + url);
+  const res = await fetch(
+    `${SB_URL}/rest/v1/signale_cache?liga=eq.${liga}&select=*`,
+    { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }, signal: AbortSignal.timeout(8000) }
+  );
+  if (!res.ok) throw new Error('Supabase Fehler ' + res.status);
+  const daten = await res.json();
   CSV_CACHE[url] = { daten, zeit: jetzt };
   return daten;
 }
