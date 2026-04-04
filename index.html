@@ -801,62 +801,53 @@ async function fetchMitCache(url) {
   const filename = url.split('/').pop();
   const liga = CSV_TO_LIGA[filename];
   if (!liga) throw new Error('Unbekannte Liga-URL: ' + url);
+  const sbKey = 'fix_' + liga;
 
-  // 1. Supabase versuchen
+  // 1. Supabase fixtures laden (fix_{liga})
   try {
     const res = await fetch(
-      `${SB_URL}/rest/v1/signale_cache?liga=eq.${liga}&select=*`,
+      `${SB_URL}/rest/v1/signale_cache?liga=eq.${sbKey}&select=*`,
       { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }, signal: AbortSignal.timeout(8000) }
     );
     if (res.ok) {
       const rows = await res.json();
-      let spieleRaw = [];
-      if (rows.length > 0) {
-        const row0 = rows[0];
-        if (row0.spiele !== undefined) {
-          for (const row of rows) {
-            let s = row.spiele || [];
-            if (typeof s === 'string') { try { s = JSON.parse(s); } catch(e) { s = []; } }
-            if (Array.isArray(s)) spieleRaw = spieleRaw.concat(s);
-          }
-        } else if (row0.HomeTeam !== undefined) {
-          spieleRaw = rows;
-        }
-      }
+      let spieleRaw = rows[0]?.spiele || [];
+      if (typeof spieleRaw === 'string') { try { spieleRaw = JSON.parse(spieleRaw); } catch(e) { spieleRaw = []; } }
       const spiele = spieleRaw.map(s => ({
         ...s,
         'Avg>2.5': s['B365>2.5'] || s['Avg>2.5'] || '',
         'Avg<2.5': s['B365<2.5'] || s['Avg<2.5'] || '',
       }));
-      const offen = spiele.filter(s => !s.FTHG || s.FTHG === '').length;
-      console.log(`[${liga}] Supabase: ${spiele.length} Spiele, ${offen} offen`);
-      // Supabase-Daten nur verwenden wenn offene Spiele vorhanden
-      if (offen > 0) {
+      console.log(`[${liga}] Supabase fix_: ${spiele.length} Spiele`);
+      if (spiele.length > 0) {
         CSV_CACHE[url] = { daten: spiele, zeit: jetzt };
         return spiele;
       }
-      console.log(`[${liga}] Supabase veraltet (0 offen) → CSV Fallback`);
     }
   } catch(e) {
-    console.log(`[${liga}] Supabase Fehler: ${e.message} → CSV Fallback`);
+    console.log(`[${liga}] Supabase Fehler: ${e.message}`);
   }
 
-  // 2. Fallback: direkt CSV via CORS-Proxy laden
-  const proxy1 = 'https://corsproxy.io/?' + encodeURIComponent(url);
-  const proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+  // 2. Fallback: fixtures.csv direkt via CORS-Proxy
+  console.log(`[${liga}] Fallback → fixtures.csv`);
+  const fixturesUrl = 'https://www.football-data.co.uk/fixtures.csv';
+  const proxy1 = 'https://corsproxy.io/?' + encodeURIComponent(fixturesUrl);
+  const proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(fixturesUrl);
   let text;
   try {
     const r = await fetch(proxy1, { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) throw new Error('proxy1 ' + r.status);
+    if (!r.ok) throw new Error('p1 ' + r.status);
     text = await r.text();
-    console.log(`[${liga}] CSV via corsproxy.io geladen`);
   } catch(e) {
     const r = await fetch(proxy2, { signal: AbortSignal.timeout(10000) });
     text = await r.text();
-    console.log(`[${liga}] CSV via allorigins geladen`);
   }
-  const daten = parseCSV(text);
-  console.log(`[${liga}] CSV: ${daten.length} Spiele, ${daten.filter(s=>!s.FTHG||s.FTHG==='').length} offen`);
+  const DIV_MAP = { 'E0':'Premier_League','E1':'Championship','D2':'2_Bundesliga','SC0':'Scottish_Prem','N1':'Eredivisie' };
+  const alle = parseCSV(text);
+  const daten = alle
+    .filter(s => DIV_MAP[s.Div] === liga)
+    .map(s => ({ ...s, 'Avg>2.5': s['B365>2.5']||'', 'Avg<2.5': s['B365<2.5']||'' }));
+  console.log(`[${liga}] fixtures.csv Fallback: ${daten.length} Spiele`);
   CSV_CACHE[url] = { daten, zeit: jetzt };
   return daten;
 }
