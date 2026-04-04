@@ -19,7 +19,7 @@ LIGEN = {
     "Eredivisie":     88,
 }
 
-SAISON = 2024  # aktuelle Saison
+SAISON = 2025  # aktuelle Saison 2025/26
 
 
 def fetch_fixtures(league_id):
