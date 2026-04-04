@@ -796,44 +796,56 @@ const CACHE_DAUER = 4 * 60 * 60 * 1000;
 async function fetchMitCache(url) {
   const jetzt = Date.now();
   if (CSV_CACHE[url] && (jetzt - CSV_CACHE[url].zeit) < CACHE_DAUER) {
+    console.log(`[CACHE] ${url.split('/').pop()} → ${CSV_CACHE[url].daten.length} Einträge (cached)`);
     return CSV_CACHE[url].daten;
   }
   const filename = url.split('/').pop();
   const liga = CSV_TO_LIGA[filename];
   if (!liga) throw new Error('Unbekannte Liga-URL: ' + url);
+
+  console.log(`[FETCH] ${liga} → Supabase...`);
   const res = await fetch(
     `${SB_URL}/rest/v1/signale_cache?liga=eq.${liga}&select=*`,
     { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }, signal: AbortSignal.timeout(8000) }
   );
+  console.log(`[${liga}] HTTP ${res.status}`);
   if (!res.ok) throw new Error('Supabase Fehler ' + res.status);
+
   const rows = await res.json();
-  console.log(`[${liga}] RAW rows:`, JSON.stringify(rows).substring(0, 300));
+  console.log(`[${liga}] rows.length=${rows.length}`);
+  if (rows.length > 0) {
+    console.log(`[${liga}] row[0] keys:`, Object.keys(rows[0]));
+    console.log(`[${liga}] row[0].spiele type:`, typeof rows[0].spiele, '| isArray:', Array.isArray(rows[0].spiele));
+    if (rows[0].spiele) {
+      const sample = Array.isArray(rows[0].spiele) ? rows[0].spiele[0] : null;
+      console.log(`[${liga}] spiele[0]:`, JSON.stringify(sample));
+      console.log(`[${liga}] spiele[0] keys:`, sample ? Object.keys(sample) : 'n/a');
+    }
+  }
 
   let spieleRaw = [];
-
   if (rows.length > 0) {
     const row0 = rows[0];
     if (row0.spiele !== undefined) {
-      // Struktur: { liga, spiele: [...] } — 1 Zeile pro Liga
-      // Alle Zeilen zusammenführen (falls mehrere Inserts ohne Upsert)
       for (const row of rows) {
         let s = row.spiele || [];
         if (typeof s === 'string') { try { s = JSON.parse(s); } catch(e) { s = []; } }
         if (Array.isArray(s)) spieleRaw = spieleRaw.concat(s);
       }
     } else if (row0.HomeTeam !== undefined) {
-      // Struktur: jede Zeile ist ein Spiel direkt
       spieleRaw = rows;
     }
   }
 
-  console.log(`[${liga}] spiele=${spieleRaw.length}, erstes:`, spieleRaw[0] ? JSON.stringify(spieleRaw[0]).substring(0,150) : 'leer');
-
+  console.log(`[${liga}] spieleRaw.length=${spieleRaw.length}`);
   const spiele = spieleRaw.map(s => ({
     ...s,
     'Avg>2.5': s['B365>2.5'] || s['Avg>2.5'] || '',
     'Avg<2.5': s['B365<2.5'] || s['Avg<2.5'] || '',
   }));
+  const ohneErgebnis = spiele.filter(s => !s.FTHG || s.FTHG === '').length;
+  console.log(`[${liga}] spiele nach Mapping=${spiele.length}, davon ohne Ergebnis (offen)=${ohneErgebnis}`);
+
   CSV_CACHE[url] = { daten: spiele, zeit: jetzt };
   return spiele;
 }
