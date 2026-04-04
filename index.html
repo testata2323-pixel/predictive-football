@@ -806,9 +806,16 @@ async function fetchMitCache(url) {
     { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }, signal: AbortSignal.timeout(8000) }
   );
   if (!res.ok) throw new Error('Supabase Fehler ' + res.status);
-  const daten = await res.json();
-  CSV_CACHE[url] = { daten, zeit: jetzt };
-  return daten;
+  const rows = await res.json();
+  // Tabelle hat 1 Zeile pro Liga: { liga, spiele: [...], updated_at }
+  // spiele-Felder verwenden B365-Quoten → auf Avg-Namen mappen
+  const spiele = (rows[0]?.spiele || []).map(s => ({
+    ...s,
+    'Avg>2.5': s['B365>2.5'] || s['Avg>2.5'] || '',
+    'Avg<2.5': s['B365<2.5'] || s['Avg<2.5'] || '',
+  }));
+  CSV_CACHE[url] = { daten: spiele, zeit: jetzt };
+  return spiele;
 }
 
 // Verletzungsdaten Cache
