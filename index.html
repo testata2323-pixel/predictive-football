@@ -1001,7 +1001,7 @@ async function ladeEmpfehlungen() {
     <br>${ligaErgebnisse.map(({liga,spiele})=>{const h=new Date();h.setHours(0,0,0,0);return `${STRATEGIEN[liga]?.name||liga}: ${spiele.filter(s=>{if(!s.Date)return false;const dp=s.Date.split('/');if(dp.length<3)return false;const j=dp[2].length===4?dp[2]:'20'+dp[2];const d=new Date(`${j}-${dp[1]}-${dp[0]}`);return !isNaN(d.getTime())&&d>=h;}).length} zukünftig`;}).join(' · ')}
   </div>`;
 
-  if (empfehlungen.length === 0) {
+  if (empfehlungen.length === 0 && ohneQuoten.length === 0) {
     const ligaStats = ligaErgebnisse.map(({ liga, spiele }) => {
       const name = STRATEGIEN[liga] ? STRATEGIEN[liga].name : liga;
       const h = new Date(); h.setHours(0,0,0,0);
