@@ -347,6 +347,10 @@ header{border-bottom:1px solid var(--border);padding:16px 0;background:rgba(10,1
       <button class="btn btn-danger btn-sm" onclick="openModal('reset-modal')">↺ Reset</button>
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">
+      <div class="stat-label" style="margin-bottom:12px">PRO KATEGORIE</div>
+      <div id="kat-analyse"><div style="color:var(--text2);font-size:13px">Noch keine Daten.</div></div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">
       <div class="stat-label" style="margin-bottom:12px">PRO LIGA</div>
       <div id="liga-analyse"><div style="color:var(--text2);font-size:13px">Noch keine Daten.</div></div>
     </div>
@@ -566,6 +570,7 @@ header{border-bottom:1px solid var(--border);padding:16px 0;background:rgba(10,1
       </div>
     </div>
     <input type="hidden" id="w-richtung" value="ueber">
+    <input type="hidden" id="w-kategorie" value="">
 
     <!-- SYSTEM ENTSCHEIDUNG -->
     <div class="signal-box" id="signal-box"></div>
@@ -917,9 +922,9 @@ async function ladeEmpfehlungen() {
 
   // Rang und Farbe zuweisen
   const RANG_CONFIG = [
-    { label: '🥇 TOP PICK', border: '#00ff88', bg: 'rgba(0,255,136,0.08)', badge_bg: '#00ff88', badge_color: '#000' },
-    { label: '🥈 STARK',    border: '#ffaa00', bg: 'rgba(255,170,0,0.06)',  badge_bg: '#ffaa00', badge_color: '#000' },
-    { label: '🥉 GUT',      border: '#ff6b35', bg: 'rgba(255,107,53,0.06)', badge_bg: '#ff6b35', badge_color: '#fff' },
+    { label: '🥇 TOP PICK', kategorie: 'TOP PICK', border: '#00ff88', bg: 'rgba(0,255,136,0.08)',   badge_bg: '#00ff88', badge_color: '#000' },
+    { label: '🥈 SOLIDE',   kategorie: 'SOLIDE',   border: '#3b82f6', bg: 'rgba(59,130,246,0.06)',  badge_bg: '#3b82f6', badge_color: '#fff' },
+    { label: '🥉 MÖGLICH',  kategorie: 'MÖGLICH',  border: '#6b7280', bg: 'rgba(107,114,128,0.06)', badge_bg: '#6b7280', badge_color: '#fff' },
   ];
 
   const html = empfehlungen.map((e) => {
@@ -932,7 +937,7 @@ async function ladeEmpfehlungen() {
 
     return `
     <div class="empf-card" style="position:relative;padding-top:${rang?'28px':'16px'};${borderStyle};margin-bottom:12px"
-      onclick="openWetteVonEmpf('${e.liga}','${e.heim}','${e.ausw}','${e.datum}',${e.qU},${e.qO})">
+      onclick="openWetteVonEmpf('${e.liga}','${e.heim}','${e.ausw}','${e.datum}',${e.qU},${e.qO},'${rang ? rang.kategorie : ''}')">
       ${badgeHtml}
       <div class="empf-teams">${e.heim} vs ${e.ausw}</div>
       <div class="empf-meta" style="margin:6px 0">
@@ -1011,7 +1016,7 @@ async function ladeEmpfehlungen() {
     const badgeHtml = rang ? `<span style="background:${rang.badge_bg};color:${rang.badge_color};font-family:'Space Mono',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;margin-right:6px">${rang.label}</span>` : '';
     return `
     <div class="empf-card" style="${borderStyle};margin-bottom:8px"
-      onclick="openWetteVonEmpf('${e.liga}','${e.heim}','${e.ausw}','${e.datum}',${e.qU},${e.qO})">
+      onclick="openWetteVonEmpf('${e.liga}','${e.heim}','${e.ausw}','${e.datum}',${e.qU},${e.qO},'${rang ? rang.kategorie : ''}')">
       <div style="margin-bottom:4px">${badgeHtml}</div>
       <div class="empf-teams">${e.heim} vs ${e.ausw}</div>
       <div class="empf-meta">
@@ -1023,13 +1028,14 @@ async function ladeEmpfehlungen() {
   }).join('');
 }
 
-function openWetteVonEmpf(liga, heim, ausw, datum, qU, qO) {
+function openWetteVonEmpf(liga, heim, ausw, datum, qU, qO, kategorie) {
   document.getElementById('w-liga').value = liga;
   document.getElementById('w-heim').value = heim;
   document.getElementById('w-ausw').value = ausw;
   document.getElementById('w-qu').value = qU;
   document.getElementById('w-qo').value = qO;
   document.getElementById('w-richtung').value = 'ueber';
+  document.getElementById('w-kategorie').value = kategorie || '';
   // Datum: bereits YYYY-MM-DD (von The Odds API / Supabase)
   document.getElementById('w-datum').value = datum;
   const empfEinsatz = (berecheBankroll() * EINSATZ_PCT).toFixed(2);
@@ -1146,13 +1152,14 @@ async function wetteEintragen() {
 
   const quote = richtung === 'ueber' ? qO : qU;
   const impl = (qU && qO) ? (1/qU)/(1/qU+1/qO) : 0.5;
+  const kategorie = document.getElementById('w-kategorie').value || '';
 
   try {
     const { error } = await db.from('wetten').insert([{
       liga, heim, ausw,
       datum: datum,
       richtung, quote, quote_unter: qU, quote_ueber: qO,
-      impl_unter: impl, einsatz, status: 'offen'
+      impl_unter: impl, einsatz, status: 'offen', kategorie
     }]);
     if (error) throw error;
     await ladeAlleWetten();
@@ -1272,6 +1279,46 @@ function renderWetten() {
 // ============================================================
 function updateAnalyse() {
   const abg = alleWetten.filter(w => w.status !== 'offen');
+
+  // Kategorie
+  const katDiv = document.getElementById('kat-analyse');
+  const KAT_CFG = [
+    { key: 'TOP PICK', label: '🥇 TOP PICK', color: '#00ff88' },
+    { key: 'SOLIDE',   label: '🥈 SOLIDE',   color: '#3b82f6' },
+    { key: 'MÖGLICH',  label: '🥉 MÖGLICH',  color: '#6b7280' },
+    { key: '',         label: 'Manuell',      color: 'var(--text2)' },
+  ];
+  if (abg.length === 0) {
+    katDiv.innerHTML = '<div style="color:var(--text2);font-size:13px">Noch keine Daten.</div>';
+  } else {
+    const stats = {};
+    KAT_CFG.forEach(k => { stats[k.key] = { gew: 0, ver: 0, einsatz: 0, gewinn: 0 }; });
+    abg.forEach(w => {
+      const k = (w.kategorie || '') in stats ? (w.kategorie || '') : '';
+      stats[k].gew     += w.status === 'gewonnen' ? 1 : 0;
+      stats[k].ver     += w.status === 'verloren' ? 1 : 0;
+      stats[k].einsatz += parseFloat(w.einsatz);
+      stats[k].gewinn  += w.status === 'gewonnen'
+        ? parseFloat(w.einsatz) * (parseFloat(w.quote) - 1)
+        : -parseFloat(w.einsatz);
+    });
+    katDiv.innerHTML = KAT_CFG
+      .filter(k => stats[k.key].gew + stats[k.key].ver > 0)
+      .map(k => {
+        const s = stats[k.key];
+        const ges = s.gew + s.ver;
+        const hit = (s.gew / ges * 100).toFixed(0);
+        const roi = s.einsatz > 0 ? (s.gewinn / s.einsatz * 100).toFixed(1) : '0.0';
+        return `
+        <div style="display:grid;grid-template-columns:1fr repeat(4,auto);gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(42,42,58,.5)">
+          <div style="font-size:12px;font-weight:600;color:${k.color}">${k.label}</div>
+          <div style="font-family:'Space Mono',monospace;font-size:10px;text-align:center;color:var(--text2)">${ges}<br><span style="color:var(--text2);font-size:9px">WETTEN</span></div>
+          <div style="font-family:'Space Mono',monospace;font-size:10px;text-align:center;color:var(--win)">${s.gew}<br><span style="font-size:9px">GEW</span></div>
+          <div style="font-family:'Space Mono',monospace;font-size:10px;text-align:center;color:${hit>=50?'var(--win)':'var(--loss)'}">${hit}%<br><span style="color:var(--text2);font-size:9px">HIT</span></div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;text-align:right;color:${s.gewinn>=0?'var(--win)':'var(--loss)'}">${s.gewinn>=0?'+':''}${s.gewinn.toFixed(2)}€<br><span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text2)">ROI ${roi}%</span></div>
+        </div>`;
+      }).join('') || '<div style="color:var(--text2);font-size:13px">Noch keine Daten.</div>';
+  }
 
   // Liga
   const ligaDiv = document.getElementById('liga-analyse');
