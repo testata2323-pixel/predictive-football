@@ -1,0 +1,29 @@
+name: Nightly Ergebnisauswertung
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 23:00 MEZ (Winter) / 00:00 CEST (Sommer)
+  workflow_dispatch:         # Manuell ausführbar
+
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Repository laden
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Pakete installieren
+        run: pip install requests
+
+      - name: Ergebnisse holen und Wetten abrechnen
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python settle_wetten.py
