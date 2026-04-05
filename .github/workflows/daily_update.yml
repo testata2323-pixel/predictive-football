@@ -34,10 +34,10 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: python 17_daily_update.py
 
-      - name: Signale Cache aktualisieren (fetch_to_supabase)
+      - name: Quoten laden und in Supabase speichern (fetch_to_supabase)
         env:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python fetch_to_supabase.py
 
       - name: Erfolg loggen
