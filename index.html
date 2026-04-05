@@ -910,8 +910,10 @@ async function ladeEmpfehlungen() {
     e.konsistenz_strat = strat.konsistenz;
   });
 
-  // Nach Score sortieren
-  empfehlungen.sort((a, b) => b.score - a.score);
+  // Rang nach Score vergeben, dann nach Datum sortieren
+  const byScore = [...empfehlungen].sort((a, b) => b.score - a.score);
+  byScore.forEach((e, i) => { e.rang = i; });
+  empfehlungen.sort((a, b) => a.spielDatum - b.spielDatum);
 
   // Rang und Farbe zuweisen
   const RANG_CONFIG = [
@@ -920,8 +922,8 @@ async function ladeEmpfehlungen() {
     { label: '🥉 GUT',      border: '#ff6b35', bg: 'rgba(255,107,53,0.06)', badge_bg: '#ff6b35', badge_color: '#fff' },
   ];
 
-  const html = empfehlungen.map((e, idx) => {
-    const rang = idx < 3 ? RANG_CONFIG[idx] : null;
+  const html = empfehlungen.map((e) => {
+    const rang = e.rang < 3 ? RANG_CONFIG[e.rang] : null;
     const borderStyle = rang ? `border-color:${rang.border};box-shadow:0 0 12px ${rang.border}33;background:${rang.bg}` : '';
     const badgeHtml = rang ? `
       <div style="position:absolute;top:-1px;left:16px;background:${rang.badge_bg};color:${rang.badge_color};
@@ -1003,8 +1005,8 @@ async function ladeEmpfehlungen() {
     </div>`).join('') : '';
 
   container.innerHTML = debugHeader + html + ohneQuotenHtml;
-  dashContainer.innerHTML = empfehlungen.slice(0,2).map((e, idx) => {
-    const rang = idx < 3 ? RANG_CONFIG[idx] : null;
+  dashContainer.innerHTML = empfehlungen.slice(0,2).map((e) => {
+    const rang = e.rang < 3 ? RANG_CONFIG[e.rang] : null;
     const borderStyle = rang ? `border-color:${rang.border};box-shadow:0 0 10px ${rang.border}33;background:${rang.bg}` : '';
     const badgeHtml = rang ? `<span style="background:${rang.badge_bg};color:${rang.badge_color};font-family:'Space Mono',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;margin-right:6px">${rang.label}</span>` : '';
     return `
