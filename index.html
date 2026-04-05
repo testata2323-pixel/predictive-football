@@ -770,136 +770,36 @@ const STRATEGIEN = {
   'Championship':   { minImpl: 0.50, tage: [5,6,0], name: 'Championship' },
 };
 
-const LIGA_URLS = {
-  'Premier_League': 'https://www.football-data.co.uk/mmz4281/2526/E0.csv',
-  '2_Bundesliga':   'https://www.football-data.co.uk/mmz4281/2526/D2.csv',
-  'Scottish_Prem':  'https://www.football-data.co.uk/mmz4281/2526/SC0.csv',
-  'Eredivisie':     'https://www.football-data.co.uk/mmz4281/2526/N1.csv',
-  'Championship':   'https://www.football-data.co.uk/mmz4281/2526/E1.csv',
-};
-
 // Supabase
 const SB_URL = 'https://yloudwrsmpbtxovxozqm.supabase.co';
 const SB_KEY = 'sb_publishable_E43hus55ruODU1i0G8FLjg_TLVAoghZ';
-const CSV_TO_LIGA = {
-  'E0.csv':  'Premier_League',
-  'D2.csv':  '2_Bundesliga',
-  'SC0.csv': 'Scottish_Prem',
-  'N1.csv':  'Eredivisie',
-  'E1.csv':  'Championship',
-};
-
-// Cache für Spieldaten (4 Stunden)
-const CSV_CACHE = {};
-const CACHE_DAUER = 4 * 60 * 60 * 1000;
-
-async function fetchMitCache(url) {
-  const jetzt = Date.now();
-  if (CSV_CACHE[url] && (jetzt - CSV_CACHE[url].zeit) < CACHE_DAUER) {
-    return CSV_CACHE[url].daten;
-  }
-  const filename = url.split('/').pop();
-  const liga = CSV_TO_LIGA[filename];
-  if (!liga) throw new Error('Unbekannte Liga-URL: ' + url);
-  const sbKey = 'fix_' + liga;
-
-  // 1. Supabase fixtures laden (fix_{liga})
-  try {
-    const res = await fetch(
-      `${SB_URL}/rest/v1/signale_cache?liga=eq.${sbKey}&select=*`,
-      { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }, signal: AbortSignal.timeout(8000) }
-    );
-    if (res.ok) {
-      const rows = await res.json();
-      let spieleRaw = rows[0]?.spiele || [];
-      if (typeof spieleRaw === 'string') { try { spieleRaw = JSON.parse(spieleRaw); } catch(e) { spieleRaw = []; } }
-      const spiele = spieleRaw.map(s => ({
-        ...s,
-        'Avg>2.5': s['B365>2.5'] || s['Avg>2.5'] || '',
-        'Avg<2.5': s['B365<2.5'] || s['Avg<2.5'] || '',
-      }));
-      console.log(`[${liga}] Supabase fix_: ${spiele.length} Spiele`);
-      if (spiele.length > 0) {
-        CSV_CACHE[url] = { daten: spiele, zeit: jetzt };
-        return spiele;
-      }
-    }
-  } catch(e) {
-    console.log(`[${liga}] Supabase Fehler: ${e.message}`);
-  }
-
-  // 2. Fallback: fixtures.csv direkt via CORS-Proxy
-  console.log(`[${liga}] Fallback → fixtures.csv`);
-  const fixturesUrl = 'https://www.football-data.co.uk/fixtures.csv';
-  const proxy1 = 'https://corsproxy.io/?' + encodeURIComponent(fixturesUrl);
-  const proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(fixturesUrl);
-  let text;
-  try {
-    const r = await fetch(proxy1, { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) throw new Error('p1 ' + r.status);
-    text = await r.text();
-  } catch(e) {
-    const r = await fetch(proxy2, { signal: AbortSignal.timeout(10000) });
-    text = await r.text();
-  }
-  const DIV_MAP = { 'E0':'Premier_League','E1':'Championship','D2':'2_Bundesliga','SC0':'Scottish_Prem','N1':'Eredivisie' };
-  const alle = parseCSV(text);
-  const daten = alle
-    .filter(s => DIV_MAP[s.Div] === liga)
-    .map(s => ({ ...s, 'Avg>2.5': s['B365>2.5']||'', 'Avg<2.5': s['B365<2.5']||'' }));
-  console.log(`[${liga}] fixtures.csv Fallback: ${daten.length} Spiele`);
-  CSV_CACHE[url] = { daten, zeit: jetzt };
-  return daten;
-}
 
 // Verletzungsdaten Cache
 let verletzungsCache = null;
 let verletzungsCacheZeit = 0;
 
-function parseCSV(text) {
-  const lines = text.trim().split('\n');
-  const headers = lines[0].split(',').map(h => h.trim().replace(/"/g,''));
-  return lines.slice(1).map(line => {
-    const vals = line.split(',');
-    const obj = {};
-    headers.forEach((h,i) => obj[h] = (vals[i]||'').trim().replace(/"/g,''));
-    return obj;
-  }).filter(r => r.HomeTeam && r.AwayTeam);
-}
-
-// League-Code in fixtures.csv → unser Liga-Key
-const FIXTURES_LIGA_MAP = { 'E0':'Premier_League', 'E1':'Championship', 'D2':'2_Bundesliga', 'SC0':'Scottish_Prem', 'N1':'Eredivisie' };
-const FIXTURES_URL = 'https://www.football-data.co.uk/fixtures.csv';
-
-async function ladeFixtures() {
-  const proxy1 = 'https://corsproxy.io/?' + encodeURIComponent(FIXTURES_URL);
-  const proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(FIXTURES_URL);
-  let text;
-  try {
-    const r = await fetch(proxy1, { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) throw new Error('p1 ' + r.status);
-    text = await r.text();
-  } catch(e) {
-    const r = await fetch(proxy2, { signal: AbortSignal.timeout(10000) });
-    text = await r.text();
-  }
-  const alle = parseCSV(text);
-  console.log('[fixtures.csv] Gesamt:', alle.length, '| erstes:', JSON.stringify(alle[0]));
-
-  // Nach Liga gruppieren
-  const nachLiga = {};
-  Object.values(FIXTURES_LIGA_MAP).forEach(k => nachLiga[k] = []);
-  alle.forEach(s => {
-    const liga = FIXTURES_LIGA_MAP[s.Div || s.League || s.league];
-    if (liga) {
-      nachLiga[liga].push({
-        ...s,
-        'Avg>2.5': s['B365>2.5'] || s['Avg>2.5'] || s['BbAv>2.5'] || '',
-        'Avg<2.5': s['B365<2.5'] || s['Avg<2.5'] || s['BbAv<2.5'] || '',
-      });
+// Lädt alle Spiele direkt aus den Supabase fix_{liga} Tabellen
+async function ladeAlleSpiele() {
+  const ligen = Object.keys(STRATEGIEN);
+  const ergebnisse = await Promise.all(ligen.map(async liga => {
+    try {
+      const res = await fetch(
+        `${SB_URL}/rest/v1/fix_${liga}?select=*`,
+        { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }, signal: AbortSignal.timeout(8000) }
+      );
+      if (!res.ok) {
+        console.log(`[${liga}] Supabase HTTP ${res.status}`);
+        return { liga, spiele: [] };
+      }
+      const rows = await res.json();
+      console.log(`[${liga}] Supabase fix_${liga}: ${rows.length} Spiele`);
+      return { liga, spiele: rows };
+    } catch(e) {
+      console.log(`[${liga}] Supabase Fehler: ${e.message}`);
+      return { liga, spiele: [] };
     }
-  });
-  return nachLiga;
+  }));
+  return ergebnisse;
 }
 
 async function ladeEmpfehlungen() {
@@ -912,29 +812,9 @@ async function ladeEmpfehlungen() {
   console.log('Lade Empfehlungen, Datum:', new Date().toISOString(), 'Wochentag:', new Date().getDay());
   const bankroll = berecheBankroll();
 
-  // fixtures.csv laden (anstehende Spiele aller Ligen)
-  let fixturesNachLiga = {};
-  try {
-    fixturesNachLiga = await ladeFixtures();
-  } catch(e) {
-    console.log('[fixtures] Fehler:', e.message);
-  }
-
-  // Fallback auf Saison-CSVs wenn fixtures leer
-  const totalFixtures = Object.values(fixturesNachLiga).reduce((s,a)=>s+a.length,0);
-  console.log('[fixtures] Spiele pro Liga:', Object.entries(fixturesNachLiga).map(([k,v])=>`${k}:${v.length}`).join(' '));
-
-  let ligaErgebnisse;
-  if (totalFixtures > 0) {
-    ligaErgebnisse = Object.entries(fixturesNachLiga).map(([liga, spiele]) => ({ liga, spiele }));
-  } else {
-    console.log('[fixtures] Leer → Fallback auf Saison-CSVs');
-    const ligaPromises = Object.entries(LIGA_URLS).map(async ([liga, url]) => {
-      try { return { liga, spiele: await fetchMitCache(url) }; }
-      catch(e) { return { liga, spiele: [] }; }
-    });
-    ligaErgebnisse = await Promise.all(ligaPromises);
-  }
+  // Spiele direkt aus Supabase fix_{liga} Tabellen laden
+  const ligaErgebnisse = await ladeAlleSpiele();
+  console.log('[supabase] Spiele pro Liga:', ligaErgebnisse.map(({liga,spiele})=>`${liga}:${spiele.length}`).join(' '));
 
   for (const { liga, spiele } of ligaErgebnisse) {
     try {
@@ -946,12 +826,12 @@ async function ladeEmpfehlungen() {
       spiele.forEach(s => {
         if (!s.Date || !s.HomeTeam || !s.AwayTeam) return;
 
-        const dateParts = s.Date.split('/');
+        // Date format from The Odds API: YYYY-MM-DD
         let spielDatum;
         try {
-          const jahr = dateParts[2].length === 4 ? dateParts[2] : '20' + dateParts[2];
+          const [year, month, day] = s.Date.split('-').map(Number);
           const [sh, sm] = s.Time ? s.Time.split(':').map(Number) : [23, 59];
-          spielDatum = new Date(parseInt(jahr), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]), sh || 23, sm || 59);
+          spielDatum = new Date(year, month - 1, day, sh || 23, sm || 59);
         } catch(e) { return; }
         if (isNaN(spielDatum.getTime())) return;
         if (spielDatum <= new Date()) return;
@@ -988,32 +868,24 @@ async function ladeEmpfehlungen() {
   empfehlungen.sort((a,b) => a.spielDatum - b.spielDatum);
   document.getElementById('signal-count').textContent = empfehlungen.length + ' Signale';
 
-  // DEBUG: Geladene Spiele zählen
+  // DEBUG: Geladene Spiele zählen (Date format: YYYY-MM-DD)
   const heuteDbg = new Date(); heuteDbg.setHours(0,0,0,0);
-  const gesamtSpiele = ligaErgebnisse.reduce((sum, { spiele }) => sum + spiele.filter(s => {
+  const istZukunft = s => {
     if (!s.Date) return false;
-    const dp = s.Date.split('/'); if (dp.length < 3) return false;
-    const jahr = dp[2].length === 4 ? dp[2] : '20' + dp[2];
-    const d = new Date(`${jahr}-${dp[1]}-${dp[0]}`);
-    return !isNaN(d.getTime()) && d >= heuteDbg;
-  }).length, 0);
+    const [y,m,d] = s.Date.split('-').map(Number);
+    if (!y || !m || !d) return false;
+    return new Date(y, m-1, d) >= heuteDbg;
+  };
+  const gesamtSpiele = ligaErgebnisse.reduce((sum, { spiele }) => sum + spiele.filter(istZukunft).length, 0);
   const debugHeader = `<div style="background:rgba(68,136,255,.1);border:1px solid rgba(68,136,255,.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-family:'Space Mono',monospace;font-size:10px;color:var(--accent3)">
     📊 ${gesamtSpiele} Spiele geladen | ${empfehlungen.length} Signale gefunden | Wochentag: ${['So','Mo','Di','Mi','Do','Fr','Sa'][new Date().getDay()]} (${new Date().getDay()})
-    <br>${ligaErgebnisse.map(({liga,spiele})=>{const h=new Date();h.setHours(0,0,0,0);return `${STRATEGIEN[liga]?.name||liga}: ${spiele.filter(s=>{if(!s.Date)return false;const dp=s.Date.split('/');if(dp.length<3)return false;const j=dp[2].length===4?dp[2]:'20'+dp[2];const d=new Date(`${j}-${dp[1]}-${dp[0]}`);return !isNaN(d.getTime())&&d>=h;}).length} zukünftig`;}).join(' · ')}
+    <br>${ligaErgebnisse.map(({liga,spiele})=>`${STRATEGIEN[liga]?.name||liga}: ${spiele.filter(istZukunft).length} zukünftig`).join(' · ')}
   </div>`;
 
   if (empfehlungen.length === 0 && ohneQuoten.length === 0) {
     const ligaStats = ligaErgebnisse.map(({ liga, spiele }) => {
       const name = STRATEGIEN[liga] ? STRATEGIEN[liga].name : liga;
-      const h = new Date(); h.setHours(0,0,0,0);
-      const offen = spiele.filter(s => {
-        if (!s.Date) return false;
-        const dp = s.Date.split('/'); if (dp.length < 3) return false;
-        const j = dp[2].length === 4 ? dp[2] : '20' + dp[2];
-        const d = new Date(`${j}-${dp[1]}-${dp[0]}`);
-        return !isNaN(d.getTime()) && d >= h;
-      }).length;
-      return `${name}: ${offen}`;
+      return `${name}: ${spiele.filter(istZukunft).length}`;
     }).join(' | ');
     const html = debugHeader + `<div class="empty"><div class="empty-icon">📡</div><div class="empty-title">KEINE SIGNALE</div><div style="font-size:13px">Quoten werden freitags ab 14:00 Uhr aktualisiert.</div><div style="font-size:11px;color:var(--text2);margin-top:8px;font-family:'Space Mono',monospace">Aktuelle Spieldaten: ${ligaStats}</div></div>`;
     container.innerHTML = html;
