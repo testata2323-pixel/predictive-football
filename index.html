@@ -350,6 +350,10 @@ header{border-bottom:1px solid var(--border);padding:16px 0;background:rgba(10,1
       <button class="btn btn-danger btn-sm" onclick="openModal('reset-modal')">↺ Reset</button>
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">
+      <div class="stat-label" style="margin-bottom:12px">GESAMT</div>
+      <div id="gesamt-analyse"><div style="color:var(--text2);font-size:13px">Noch keine Daten.</div></div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">
       <div class="stat-label" style="margin-bottom:12px">PRO KATEGORIE</div>
       <div id="kat-analyse"><div style="color:var(--text2);font-size:13px">Noch keine Daten.</div></div>
     </div>
@@ -657,6 +661,7 @@ async function init() {
     document.querySelector('.status-dot').style.background = 'var(--loss)';
   }
   await ladeStartkapital();
+  await ladeEchtgeld();
   await ladeAlleWetten();
   updateDashboard();
   ladeEmpfehlungen();
@@ -685,6 +690,24 @@ function berecheBankroll() {
   return Math.round(bk * 100) / 100;
 }
 
+async function ladeEchtgeld() {
+  try {
+    const { data } = await db.from('bankroll').select('betrag')
+      .eq('aktion', 'echtgeld').order('created_at', { ascending: false }).limit(1);
+    if (data && data.length > 0) window.ECHTGELD_AKTUELL = parseFloat(data[0].betrag);
+  } catch(e) {}
+}
+
+async function speichereEchtgeld(betrag) {
+  try {
+    await db.from('bankroll').delete().eq('aktion', 'echtgeld');
+    await db.from('bankroll').insert([{ betrag, aktion: 'echtgeld', notiz: 'Eingezahltes Echtgeld' }]);
+    window.ECHTGELD_AKTUELL = betrag;
+    updateDashboard();
+    showToast('Echtgeld gespeichert');
+  } catch(e) { showToast('Fehler: ' + e.message); }
+}
+
 // Startkapital aus Datenbank laden
 async function ladeStartkapital() {
   try {
@@ -707,8 +730,9 @@ async function ladeStartkapital() {
 // ============================================================
 function updateDashboard() {
   const bankroll = berecheBankroll();
-  const gewinn = bankroll - STARTKAPITAL;
-  const roi = (gewinn / STARTKAPITAL) * 100;
+  const roiBasis = window.ECHTGELD_AKTUELL || window.STARTKAPITAL_AKTUELL || STARTKAPITAL;
+  const gewinn = bankroll - roiBasis;
+  const roi = (gewinn / roiBasis) * 100;
   const abg = alleWetten.filter(w => w.status !== 'offen');
   const gew = abg.filter(w => w.status === 'gewonnen');
   const offen = alleWetten.filter(w => w.status === 'offen');
@@ -1118,9 +1142,11 @@ function checkSignal() {
     // Schritt 3 einblenden
     if (schritt3) {
       schritt3.style.display = 'block';
-      document.getElementById('w-einsatz').value = empfEinsatz;
-      document.getElementById('einsatz-anzeige').textContent = empfEinsatz + '€';
-      document.getElementById('gewinn-anzeige').textContent = '+' + gewinn + '€';
+      const einsatzEl = document.getElementById('w-einsatz');
+      if (!einsatzEl.value) einsatzEl.value = empfEinsatz;
+      const aktEinsatz = einsatzEl.value;
+      document.getElementById('einsatz-anzeige').textContent = aktEinsatz + '€';
+      document.getElementById('gewinn-anzeige').textContent = '+' + (parseFloat(aktEinsatz)*(quote-1)).toFixed(2) + '€';
     }
 
   } else {
@@ -1133,11 +1159,13 @@ function checkSignal() {
     box.innerHTML = `✗ KEIN SIGNAL<br><span style="color:var(--text2)">${grund}</span><br><br><span style="color:var(--text2)">Du kannst die Wette trotzdem manuell eintragen.</span>`;
 
     if (schritt3) {
-      schritt3.style.display = 'block'; // trotzdem zeigen für manuelle Wetten
-      document.getElementById('w-einsatz').value = empfEinsatz;
-      document.getElementById('einsatz-anzeige').textContent = empfEinsatz + '€';
+      schritt3.style.display = 'block';
+      const einsatzEl = document.getElementById('w-einsatz');
+      if (!einsatzEl.value) einsatzEl.value = empfEinsatz;
+      const aktEinsatz = einsatzEl.value;
+      document.getElementById('einsatz-anzeige').textContent = aktEinsatz + '€';
       const quote = qO || 1.8;
-      document.getElementById('gewinn-anzeige').textContent = '+' + (parseFloat(empfEinsatz)*(quote-1)).toFixed(2) + '€';
+      document.getElementById('gewinn-anzeige').textContent = '+' + (parseFloat(aktEinsatz)*(quote-1)).toFixed(2) + '€';
     }
   }
 }
@@ -1296,6 +1324,41 @@ function renderWetten() {
 // ============================================================
 function updateAnalyse() {
   const abg = alleWetten.filter(w => w.status !== 'offen');
+
+  // Gesamt
+  const gesamtDiv = document.getElementById('gesamt-analyse');
+  if (abg.length === 0) {
+    gesamtDiv.innerHTML = '<div style="color:var(--text2);font-size:13px">Noch keine Daten.</div>';
+  } else {
+    const gew = abg.filter(w => w.status === 'gewonnen');
+    const gesamtEinsatz = abg.reduce((s, w) => s + parseFloat(w.einsatz), 0);
+    const gesamtGewinn  = abg.reduce((s, w) => s + (w.status === 'gewonnen'
+      ? parseFloat(w.einsatz) * (parseFloat(w.quote) - 1)
+      : -parseFloat(w.einsatz)), 0);
+    const hitrate = (gew.length / abg.length * 100).toFixed(1);
+    const roi     = gesamtEinsatz > 0 ? (gesamtGewinn / gesamtEinsatz * 100).toFixed(1) : '0.0';
+    gesamtDiv.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+        <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);margin-bottom:4px">WETTEN</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px">${abg.length}</div>
+          <div style="font-size:10px;color:var(--text2)">${gew.length} gewonnen · ${hitrate}% Hit</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);margin-bottom:4px">GESAMTEINSATZ</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px">${gesamtEinsatz.toFixed(2)}€</div>
+          <div style="font-size:10px;color:var(--text2)">Ø ${(gesamtEinsatz/abg.length).toFixed(2)}€ / Wette</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);margin-bottom:4px">GEWINN / VERLUST</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:${gesamtGewinn>=0?'var(--win)':'var(--loss)'}">${gesamtGewinn>=0?'+':''}${gesamtGewinn.toFixed(2)}€</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);margin-bottom:4px">ROI (auf Einsatz)</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:${roi>=0?'var(--win)':'var(--loss)'}">${roi>=0?'+':''}${roi}%</div>
+        </div>
+      </div>`;
+  }
 
   // Kategorie
   const katDiv = document.getElementById('kat-analyse');
@@ -1616,12 +1679,10 @@ function zeigeHedgeInfo() {
 // ============================================================
 function zeigeBankrollInfo() {
   const bankroll = berecheBankroll();
-  const abg = alleWetten.filter(w => w.status !== 'offen');
-  const offen = alleWetten.filter(w => w.status === 'offen');
-  const gewinn = bankroll - 50;
-  const roi = gewinn / 50 * 100;
+  const echtgeld = window.ECHTGELD_AKTUELL || window.STARTKAPITAL_AKTUELL || STARTKAPITAL;
+  const gewinn = bankroll - echtgeld;
+  const roi = gewinn / echtgeld * 100;
 
-  // Kelly-Empfehlung
   const empfohlenerEinsatz = (bankroll * 0.03).toFixed(2);
   const maxEinsatz = (bankroll * 0.05).toFixed(2);
 
@@ -1631,15 +1692,28 @@ function zeigeBankrollInfo() {
     <div class="modal">
       <div class="modal-handle"></div>
       <div class="modal-title">BANKROLL MANAGER</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
         <div style="background:var(--surface2);border-radius:8px;padding:14px;text-align:center">
-          <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);margin-bottom:4px">AKTUELL</div>
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent)">${bankroll.toFixed(2)}€</div>
+          <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);margin-bottom:4px">ECHTGELD</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--text)">${echtgeld.toFixed(2)}€</div>
         </div>
         <div style="background:var(--surface2);border-radius:8px;padding:14px;text-align:center">
-          <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);margin-bottom:4px">ROI</div>
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:${roi>=0?'var(--win)':'var(--loss)'}">${roi>=0?'+':''}${roi.toFixed(1)}%</div>
+          <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);margin-bottom:4px">BANKROLL</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--accent)">${bankroll.toFixed(2)}€</div>
         </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:14px;text-align:center">
+          <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);margin-bottom:4px">ROI</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:${roi>=0?'var(--win)':'var(--loss)'}">${roi>=0?'+':''}${roi.toFixed(1)}%</div>
+        </div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:14px;margin-bottom:12px">
+        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);margin-bottom:8px">EINGEZAHLTES ECHTGELD</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="bm-echtgeld" type="number" step="0.01" value="${echtgeld.toFixed(2)}"
+            style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:15px;font-family:'Space Mono',monospace">
+          <button class="btn btn-primary btn-sm" onclick="speichereEchtgeld(parseFloat(document.getElementById('bm-echtgeld').value))">Speichern</button>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px">ROI wird auf Basis dieses Betrags berechnet</div>
       </div>
       <div style="background:var(--surface2);border-radius:8px;padding:14px;margin-bottom:12px">
         <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text2);margin-bottom:10px">EINSATZ-EMPFEHLUNG (QUARTER KELLY)</div>
