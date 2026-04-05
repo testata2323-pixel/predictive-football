@@ -1262,7 +1262,7 @@ function renderWetten() {
     return;
   }
 
-  liste.innerHTML = [...alleWetten].reverse().map(w => `
+  liste.innerHTML = [...alleWetten].sort((a, b) => a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : 0).map(w => `
     <div class="wette-item">
       <div class="wette-header">
         <div>
