@@ -1161,6 +1161,13 @@ async function wetteEintragen() {
   const kategorie = document.getElementById('w-kategorie').value || '';
 
   try {
+    // Duplikat-Schutz
+    const { data: existing } = await db.from('wetten')
+      .select('id').eq('heim', heim).eq('ausw', ausw).eq('datum', datum).limit(1);
+    if (existing && existing.length > 0) {
+      showToast('Wette bereits eingetragen'); return;
+    }
+
     const { error } = await db.from('wetten').insert([{
       liga, heim, ausw,
       datum: datum,
@@ -1257,7 +1264,10 @@ function renderWetten() {
       <div class="wette-header">
         <div>
           <div class="wette-teams">${w.heim} vs ${w.ausw}</div>
-          <div class="wette-liga">${w.liga}</div>
+          <div class="wette-liga" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span>${w.liga}</span>
+            ${w.status === 'offen' && w.kategorie ? `<span style="background:${w.kategorie==='TOP PICK'?'#00ff88':w.kategorie==='SOLIDE'?'#3b82f6':'#6b7280'};color:${w.kategorie==='TOP PICK'?'#000':'#fff'};font-family:'Space Mono',monospace;font-size:8px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:0.5px">${w.kategorie}</span>` : ''}
+          </div>
         </div>
         <span class="status-badge ${w.status}">
           ${w.status === 'gewonnen' ? '✓ GEWONNEN' : w.status === 'verloren' ? '✗ VERLOREN' : '○ OFFEN'}
