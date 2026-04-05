@@ -273,7 +273,10 @@ header{border-bottom:1px solid var(--border);padding:16px 0;background:rgba(10,1
   <div id="page-wetten" class="page">
     <div class="section-header">
       <div class="section-title">MEINE WETTEN</div>
-      <div class="badge" id="wetten-badge">0</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="badge" id="wetten-badge">0</div>
+        <button class="btn btn-danger btn-sm" onclick="alleOffenenLoeschen()">✕ Alle offenen</button>
+      </div>
     </div>
     <div id="wetten-liste"><div class="loading"><div class="spinner"></div>Lade...</div></div>
   </div>
@@ -1282,8 +1285,6 @@ function renderWetten() {
         ${w.gewinn !== null && w.gewinn !== undefined ? `<span style="color:${w.gewinn>=0?'var(--win)':'var(--loss);font-weight:600'}">${w.gewinn>=0?'+':''}${parseFloat(w.gewinn).toFixed(2)}€</span>` : ''}
       </div>
       <div class="wette-actions">
-        ${w.status === 'offen' ? `
-          <button class="btn btn-primary btn-sm" onclick="openErgebnis('${w.id}')">✓ Ergebnis</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="wetteLoeschen('${w.id}','${w.status}',${w.einsatz},${w.gewinn||0})" title="Wette löschen">✕ Löschen</button>
       </div>
     </div>
@@ -1509,6 +1510,22 @@ async function autoCheck() {
 // ============================================================
 // WETTE LÖSCHEN
 // ============================================================
+async function alleOffenenLoeschen() {
+  const offene = alleWetten.filter(w => w.status === 'offen');
+  if (offene.length === 0) { showToast('Keine offenen Wetten vorhanden'); return; }
+  if (!confirm(`Wirklich alle ${offene.length} offenen Wetten löschen?`)) return;
+  try {
+    const { error } = await db.from('wetten').delete().eq('status', 'offen');
+    if (error) throw error;
+    await ladeAlleWetten();
+    updateDashboard();
+    renderWetten();
+    showToast(`${offene.length} offene Wetten gelöscht`);
+  } catch(e) {
+    showToast('Fehler beim Löschen: ' + e.message);
+  }
+}
+
 async function wetteLoeschen(id, status, einsatz, gewinn) {
   const bestaetigt = confirm('Wette wirklich löschen? Die Bankroll wird entsprechend angepasst.');
   if (!bestaetigt) return;
