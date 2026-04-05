@@ -775,6 +775,12 @@ const STRATEGIEN = {
   'Championship':   { minImpl: 0.50, tage: [5,6,0], name: 'Championship' },
 };
 
+function fmtDatum(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
 // Supabase
 const SB_URL = 'https://yloudwrsmpbtxovxozqm.supabase.co';
 const SB_KEY = 'sb_publishable_E43hus55ruODU1i0G8FLjg_TLVAoghZ';
@@ -942,7 +948,7 @@ async function ladeEmpfehlungen() {
       <div class="empf-teams">${e.heim} vs ${e.ausw}</div>
       <div class="empf-meta" style="margin:6px 0">
         <span style="color:var(--accent3)">${e.ligaName}</span>
-        <span>${e.datum}</span>
+        <span>${fmtDatum(e.datum)}</span>
         <span style="color:var(--text2)">impl: ${(e.impl*100).toFixed(0)}%</span>
         <span style="color:var(--accent)">Edge +${e.edge.toFixed(1)}%</span>
         ${e.verletzungsWarnung ? '<span style="color:var(--pending)">⚠ Ausfälle</span>' : ''}
@@ -1000,7 +1006,7 @@ async function ladeEmpfehlungen() {
           <div class="empf-teams" style="color:var(--text2)">${e.heim} vs ${e.ausw}</div>
           <div class="empf-meta" style="margin-top:4px">
             <span style="color:var(--accent3)">${e.ligaName}</span>
-            <span>${e.datum}</span>
+            <span>${fmtDatum(e.datum)}</span>
           </div>
         </div>
         <div style="background:rgba(136,136,170,.15);border:1px solid rgba(136,136,170,.3);border-radius:20px;padding:3px 10px;font-family:'Space Mono',monospace;font-size:9px;color:var(--text2);white-space:nowrap">
@@ -1258,7 +1264,7 @@ function renderWetten() {
         </span>
       </div>
       <div class="wette-details">
-        <span>${w.datum}</span>
+        <span>${fmtDatum(w.datum)}</span>
         <span style="color:${w.richtung==='ueber'?'var(--accent2)':'var(--accent3)'}">${w.richtung === 'ueber' ? 'ÜBER' : 'UNTER'} 2.5</span>
         <span>@ ${parseFloat(w.quote).toFixed(2)}</span>
         <span>${parseFloat(w.einsatz).toFixed(2)}€ Einsatz</span>
