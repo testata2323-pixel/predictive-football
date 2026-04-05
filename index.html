@@ -1030,9 +1030,8 @@ function openWetteVonEmpf(liga, heim, ausw, datum, qU, qO) {
   document.getElementById('w-qu').value = qU;
   document.getElementById('w-qo').value = qO;
   document.getElementById('w-richtung').value = 'ueber';
-  // Datum konvertieren
-  const p = datum.split('/');
-  document.getElementById('w-datum').value = `20${p[2]}-${p[1]}-${p[0]}`;
+  // Datum: bereits YYYY-MM-DD (von The Odds API / Supabase)
+  document.getElementById('w-datum').value = datum;
   const empfEinsatz = (berecheBankroll() * EINSATZ_PCT).toFixed(2);
   const einsatzEl = document.getElementById('w-einsatz');
   if (einsatzEl && !einsatzEl.value) einsatzEl.value = empfEinsatz;
