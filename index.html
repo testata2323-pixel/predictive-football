@@ -587,9 +587,9 @@ header{border-bottom:1px solid var(--border);padding:16px 0;background:rgba(10,1
       <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:12px">SCHRITT 3 — EINSATZ BESTÄTIGEN</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div>
-          <div style="font-size:12px;color:var(--text2)">Empfohlener Einsatz</div>
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--accent)" id="einsatz-anzeige">1.50€</div>
-          <div style="font-size:11px;color:var(--text2)">= 3% deines Bankrolls</div>
+          <div style="font-size:12px;color:var(--text2)">Empfehlung (3%)</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--text2)" id="einsatz-anzeige">—</div>
+          <div style="font-size:11px;color:var(--text2)">nur Vorschlag</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:12px;color:var(--text2)">Möglicher Gewinn</div>
@@ -598,8 +598,8 @@ header{border-bottom:1px solid var(--border);padding:16px 0;background:rgba(10,1
         </div>
       </div>
       <div class="form-group" style="margin-bottom:0">
-        <label class="form-label">EINSATZ ANPASSEN (optional)</label>
-        <input class="form-input" type="number" id="w-einsatz" step="0.50" oninput="updateGewinnAnzeige()">
+        <label class="form-label">DEIN EINSATZ (€)</label>
+        <input class="form-input" type="number" id="w-einsatz" step="0.50" placeholder="Betrag eingeben" oninput="updateGewinnAnzeige()">
       </div>
     </div>
     <div class="btn-row">
@@ -1073,7 +1073,7 @@ function openWetteVonEmpf(liga, heim, ausw, datum, qU, qO, kategorie) {
   document.getElementById('w-datum').value = datum;
   const empfEinsatz = (berecheBankroll() * EINSATZ_PCT).toFixed(2);
   const einsatzEl = document.getElementById('w-einsatz');
-  if (einsatzEl && !einsatzEl.value) einsatzEl.value = empfEinsatz;
+  if (einsatzEl) einsatzEl.placeholder = empfEinsatz + '€ (Empfehlung)';
   // Modal öffnen ohne Form zu leeren (von Empfehlung)
   document.getElementById('wette-modal').classList.add('active');
   checkSignal();
@@ -1083,16 +1083,18 @@ function openWetteVonEmpf(liga, heim, ausw, datum, qU, qO, kategorie) {
 // SIGNAL CHECK
 // ============================================================
 function updateGewinnAnzeige() {
-  const einsatz = parseFloat(document.getElementById('w-einsatz').value) || 0;
+  const raw = document.getElementById('w-einsatz').value;
+  const einsatz = parseFloat(raw);
   const richtung = document.getElementById('w-richtung').value;
   const quote = richtung === 'ueber'
     ? parseFloat(document.getElementById('w-qo').value) || 1.8
     : parseFloat(document.getElementById('w-qu').value) || 1.8;
-  const gewinn = einsatz * (quote - 1);
-  const einsatzEl = document.getElementById('einsatz-anzeige');
   const gewinnEl = document.getElementById('gewinn-anzeige');
-  if (einsatzEl) einsatzEl.textContent = einsatz.toFixed(2) + '€';
-  if (gewinnEl) gewinnEl.textContent = '+' + gewinn.toFixed(2) + '€';
+  if (!raw || isNaN(einsatz)) {
+    if (gewinnEl) gewinnEl.textContent = '—';
+  } else {
+    if (gewinnEl) gewinnEl.textContent = '+' + (einsatz * (quote - 1)).toFixed(2) + '€';
+  }
 }
 
 function checkSignal() {
@@ -1142,11 +1144,9 @@ function checkSignal() {
     // Schritt 3 einblenden
     if (schritt3) {
       schritt3.style.display = 'block';
-      const einsatzEl = document.getElementById('w-einsatz');
-      if (!einsatzEl.value) einsatzEl.value = empfEinsatz;
-      const aktEinsatz = einsatzEl.value;
-      document.getElementById('einsatz-anzeige').textContent = aktEinsatz + '€';
-      document.getElementById('gewinn-anzeige').textContent = '+' + (parseFloat(aktEinsatz)*(quote-1)).toFixed(2) + '€';
+      document.getElementById('einsatz-anzeige').textContent = empfEinsatz + '€';
+      document.getElementById('w-einsatz').placeholder = empfEinsatz + '€ (Empfehlung)';
+      updateGewinnAnzeige();
     }
 
   } else {
@@ -1160,12 +1160,9 @@ function checkSignal() {
 
     if (schritt3) {
       schritt3.style.display = 'block';
-      const einsatzEl = document.getElementById('w-einsatz');
-      if (!einsatzEl.value) einsatzEl.value = empfEinsatz;
-      const aktEinsatz = einsatzEl.value;
-      document.getElementById('einsatz-anzeige').textContent = aktEinsatz + '€';
-      const quote = qO || 1.8;
-      document.getElementById('gewinn-anzeige').textContent = '+' + (parseFloat(aktEinsatz)*(quote-1)).toFixed(2) + '€';
+      document.getElementById('einsatz-anzeige').textContent = empfEinsatz + '€';
+      document.getElementById('w-einsatz').placeholder = empfEinsatz + '€ (Empfehlung)';
+      updateGewinnAnzeige();
     }
   }
 }
