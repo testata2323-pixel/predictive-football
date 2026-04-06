@@ -1,6 +1,11 @@
 """
 Nightly settlement: fetch today's scores from The Odds API,
 save to Supabase `ergebnisse`, then auto-settle open bets in `wetten`.
+
+Safety rules:
+  - Only settle bets whose datum <= today
+  - Only use results where the API reports completed=True AND match_date <= today
+  - Lookup matches by (home_team, away_team, match_date) — never by name alone
 """
 import os
 import requests
@@ -42,8 +47,15 @@ def fetch_and_save_scores():
             print(f"    Fehler: {r.text[:200]}")
             continue
         completed = 0
+        today_str = date.today().isoformat()
         for game in r.json():
+            # Must be explicitly completed by the API
             if not game.get("completed"):
+                continue
+            # match_date must be today or in the past (guard against API quirks)
+            match_date = game.get("commence_time", "")[:10]
+            if match_date > today_str:
+                print(f"    SKIP (Zukunft laut API): {game.get('home_team')} vs {game.get('away_team')} {match_date}")
                 continue
             scores = game.get("scores") or []
             tore = {}
@@ -57,16 +69,16 @@ def fetch_and_save_scores():
             if home not in tore or away not in tore:
                 continue
             alle.append({
-                "liga":       liga,
-                "home_team":  home,
-                "away_team":  away,
-                "match_date": game["commence_time"][:10],
-                "goals_home": tore[home],
-                "goals_away": tore[away],
+                "liga":        liga,
+                "home_team":   home,
+                "away_team":   away,
+                "match_date":  match_date,
+                "goals_home":  tore[home],
+                "goals_away":  tore[away],
                 "total_goals": tore[home] + tore[away],
             })
             completed += 1
-        print(f"    -> {completed} abgeschlossene Spiele")
+        print(f"    -> {completed} abgeschlossene Spiele (Datum <= heute)")
 
     if not alle:
         print("  Keine abgeschlossenen Spiele gefunden.")
@@ -142,10 +154,15 @@ def settle_wette(wette_id, status, tore_heim, tore_ausw, gewinn, bankroll_danach
 
 
 def settle_open_wetten(ergebnisse):
-    # Lookup-Tabelle: (norm_home, norm_away) -> ergebnis
+    today = date.today()
+    today_str = today.isoformat()
+
+    # Lookup: (norm_home, norm_away, match_date) -> ergebnis
+    # Date is part of the key — prevents cross-date false matches
     lookup = {}
     for e in ergebnisse:
-        lookup[(norm(e["home_team"]), norm(e["away_team"]))] = e
+        key = (norm(e["home_team"]), norm(e["away_team"]), e["match_date"])
+        lookup[key] = e
 
     wetten = get_open_wetten()
     print(f"  {len(wetten)} offene Wetten")
@@ -154,25 +171,31 @@ def settle_open_wetten(ergebnisse):
         return
 
     bankroll = get_current_bankroll()
-    print(f"  Aktueller Bankroll: {bankroll:.2f}€\n")
+    print(f"  Aktueller Bankroll: {bankroll:.2f}EUR\n")
 
     abgerechnet = 0
     for wette in wetten:
-        heim    = wette["heim"]
-        ausw    = wette["ausw"]
+        heim     = wette["heim"]
+        ausw     = wette["ausw"]
+        datum    = wette.get("datum", "")
         richtung = wette["richtung"]
         einsatz  = float(wette["einsatz"])
         quote    = float(wette["quote"])
 
-        # Exakt suchen, dann vertauscht (Heimvorteil kann anders gespeichert sein)
-        ergebnis = lookup.get((norm(heim), norm(ausw)))
+        # Regel 1: Spieldatum muss heute oder in der Vergangenheit liegen
+        if not datum or datum > today_str:
+            print(f"  SKIP (Zukunft): {heim} vs {ausw} ({datum})")
+            continue
+
+        # Regel 2: Lookup by (teams + exact date) — no cross-date matching
+        ergebnis = lookup.get((norm(heim), norm(ausw), datum))
         swapped  = False
         if not ergebnis:
-            ergebnis = lookup.get((norm(ausw), norm(heim)))
+            ergebnis = lookup.get((norm(ausw), norm(heim), datum))
             swapped  = True
 
         if not ergebnis:
-            print(f"  ? Kein Ergebnis für: {heim} vs {ausw} ({wette.get('datum')})")
+            print(f"  ? Kein Ergebnis für: {heim} vs {ausw} ({datum})")
             continue
 
         gesamt    = ergebnis["total_goals"]
