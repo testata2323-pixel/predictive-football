@@ -2,10 +2,10 @@
 Nightly settlement: fetch today's scores from The Odds API,
 save to Supabase `ergebnisse`, then auto-settle open bets in `wetten`.
 
-Safety rules:
-  - Only settle bets whose datum <= today
-  - Only use results where the API reports completed=True AND match_date <= today
-  - Lookup matches by (home_team, away_team, match_date) — never by name alone
+Safety rules (two independent layers):
+  Layer 1 - Score fetch:   only store results where completed=True AND match_date <= today
+  Layer 2 - Bet settle:    skip any wette whose datum > today, regardless of results
+  Lookup key:              (home_team, away_team, match_date) — never by name alone
 """
 import os
 import requests
@@ -38,6 +38,9 @@ def norm(name):
 # ── 1. Scores holen und speichern ────────────────────────────────────────────
 
 def fetch_and_save_scores():
+    today_str = date.today().isoformat()
+    print(f"  Datum heute: {today_str}")
+
     alle = []
     for liga, sport_key in LIGEN.items():
         url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/scores/"
@@ -46,17 +49,23 @@ def fetch_and_save_scores():
         if r.status_code != 200:
             print(f"    Fehler: {r.text[:200]}")
             continue
-        completed = 0
-        today_str = date.today().isoformat()
+
+        akzeptiert = 0
         for game in r.json():
-            # Must be explicitly completed by the API
-            if not game.get("completed"):
-                continue
-            # match_date must be today or in the past (guard against API quirks)
+            home       = game.get("home_team", "")
+            away       = game.get("away_team", "")
+            completed  = game.get("completed", False)
             match_date = game.get("commence_time", "")[:10]
-            if match_date > today_str:
-                print(f"    SKIP (Zukunft laut API): {game.get('home_team')} vs {game.get('away_team')} {match_date}")
+
+            # LAYER 1A: API muss completed=True melden
+            if not completed:
                 continue
+
+            # LAYER 1B: Spieldatum darf nicht in der Zukunft liegen
+            if match_date > today_str:
+                print(f"    SKIP (completed=True aber Datum {match_date} > heute): {home} vs {away}")
+                continue
+
             scores = game.get("scores") or []
             tore = {}
             for s in scores:
@@ -64,10 +73,10 @@ def fetch_and_save_scores():
                     tore[s["name"]] = int(s["score"])
                 except (KeyError, TypeError, ValueError):
                     pass
-            home = game["home_team"]
-            away = game["away_team"]
+
             if home not in tore or away not in tore:
                 continue
+
             alle.append({
                 "liga":        liga,
                 "home_team":   home,
@@ -77,26 +86,26 @@ def fetch_and_save_scores():
                 "goals_away":  tore[away],
                 "total_goals": tore[home] + tore[away],
             })
-            completed += 1
-        print(f"    -> {completed} abgeschlossene Spiele (Datum <= heute)")
+            akzeptiert += 1
+
+        print(f"    -> {akzeptiert} abgeschlossene Spiele (completed=True, Datum <= heute)")
 
     if not alle:
-        print("  Keine abgeschlossenen Spiele gefunden.")
+        print("  Keine verwertbaren Ergebnisse gefunden.")
         return []
 
-    # Idempotent: heute löschen, dann neu einfügen
-    today = date.today().isoformat()
+    # Idempotent: heute loeschen, dann neu einfuegen
     requests.delete(
         f"{SUPABASE_URL}/rest/v1/ergebnisse",
         headers={**SB_HEADERS, "Prefer": ""},
-        params={"match_date": f"eq.{today}"},
+        params={"match_date": f"eq.{today_str}"},
     )
     r = requests.post(
         f"{SUPABASE_URL}/rest/v1/ergebnisse",
         headers=SB_HEADERS,
         json=alle,
     )
-    print(f"  -> Supabase ergebnisse: HTTP {r.status_code} ({len(alle)} Einträge gespeichert)")
+    print(f"  -> Supabase ergebnisse: HTTP {r.status_code} ({len(alle)} Eintraege)")
     return alle
 
 
@@ -115,7 +124,6 @@ def get_open_wetten():
 
 
 def get_current_bankroll():
-    # Zuletzt abgerechnete Wette -> bankroll_danach
     r = requests.get(
         f"{SUPABASE_URL}/rest/v1/wetten",
         headers=SB_HEADERS,
@@ -126,7 +134,6 @@ def get_current_bankroll():
         rows = r.json()
         if rows and rows[0].get("bankroll_danach"):
             return float(rows[0]["bankroll_danach"])
-    # Fallback: bankroll Tabelle
     r2 = requests.get(
         f"{SUPABASE_URL}/rest/v1/bankroll",
         headers=SB_HEADERS,
@@ -143,10 +150,10 @@ def settle_wette(wette_id, status, tore_heim, tore_ausw, gewinn, bankroll_danach
         headers=SB_HEADERS,
         params={"id": f"eq.{wette_id}"},
         json={
-            "status":         status,
-            "tore_heim":      tore_heim,
-            "tore_ausw":      tore_ausw,
-            "gewinn":         round(gewinn, 2),
+            "status":          status,
+            "tore_heim":       tore_heim,
+            "tore_ausw":       tore_ausw,
+            "gewinn":          round(gewinn, 2),
             "bankroll_danach": round(bankroll_danach, 2),
         },
     )
@@ -154,40 +161,43 @@ def settle_wette(wette_id, status, tore_heim, tore_ausw, gewinn, bankroll_danach
 
 
 def settle_open_wetten(ergebnisse):
-    today = date.today()
-    today_str = today.isoformat()
+    today_str = date.today().isoformat()
 
-    # Lookup: (norm_home, norm_away, match_date) -> ergebnis
-    # Date is part of the key — prevents cross-date false matches
+    # Lookup: (norm_home, norm_away, match_date) — Datum ist Teil des Schluessels
+    # Extra-Filter: nur Ergebnisse mit match_date <= heute in den Lookup aufnehmen
     lookup = {}
     for e in ergebnisse:
+        if e["match_date"] > today_str:
+            continue  # doppelte Absicherung
         key = (norm(e["home_team"]), norm(e["away_team"]), e["match_date"])
         lookup[key] = e
 
+    print(f"  {len(lookup)} Ergebnisse im Lookup (Datum <= {today_str})")
+
     wetten = get_open_wetten()
-    print(f"  {len(wetten)} offene Wetten")
+    print(f"  {len(wetten)} offene Wetten\n")
     if not wetten:
         print("  Nichts zu tun.")
         return
 
     bankroll = get_current_bankroll()
-    print(f"  Aktueller Bankroll: {bankroll:.2f}EUR\n")
+    print(f"  Aktueller Bankroll: {bankroll:.2f} EUR\n")
 
     abgerechnet = 0
     for wette in wetten:
         heim     = wette["heim"]
         ausw     = wette["ausw"]
-        datum    = wette.get("datum", "")
+        datum    = wette.get("datum") or ""
         richtung = wette["richtung"]
         einsatz  = float(wette["einsatz"])
         quote    = float(wette["quote"])
 
-        # Regel 1: Spieldatum muss heute oder in der Vergangenheit liegen
+        # LAYER 2: Spieldatum der Wette muss <= heute sein
         if not datum or datum > today_str:
-            print(f"  SKIP (Zukunft): {heim} vs {ausw} ({datum})")
+            print(f"  SKIP (Spieldatum in Zukunft): {heim} vs {ausw} | {datum} > {today_str}")
             continue
 
-        # Regel 2: Lookup by (teams + exact date) — no cross-date matching
+        # Lookup by (teams + exact date) — verhindert Kreuz-Datum-Matches
         ergebnis = lookup.get((norm(heim), norm(ausw), datum))
         swapped  = False
         if not ergebnis:
@@ -195,7 +205,7 @@ def settle_open_wetten(ergebnisse):
             swapped  = True
 
         if not ergebnis:
-            print(f"  ? Kein Ergebnis für: {heim} vs {ausw} ({datum})")
+            print(f"  WARTE: Noch kein Ergebnis fuer: {heim} vs {ausw} ({datum})")
             continue
 
         gesamt    = ergebnis["total_goals"]
@@ -216,11 +226,11 @@ def settle_open_wetten(ergebnisse):
         sc = settle_wette(wette["id"], status, tore_heim, tore_ausw, gewinn, bankroll)
         sym = "OK" if gewonnen else "XX"
         print(f"  {sym} {heim} vs {ausw}: {tore_heim}:{tore_ausw} "
-              f"({gesamt} Tore) -> {status} | {gewinn:+.2f}€ | "
-              f"Bankroll {bankroll:.2f}€ [HTTP {sc}]")
+              f"({gesamt} Tore) -> {status} | {gewinn:+.2f} EUR | "
+              f"Bankroll {bankroll:.2f} EUR [HTTP {sc}]")
         abgerechnet += 1
 
-    print(f"\n  {abgerechnet} Wetten abgerechnet. Neuer Bankroll: {bankroll:.2f}€")
+    print(f"\n  {abgerechnet} Wetten abgerechnet. Neuer Bankroll: {bankroll:.2f} EUR")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
