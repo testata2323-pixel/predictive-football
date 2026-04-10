@@ -1,15 +1,16 @@
 """
-Nightly settlement: fetch today's scores from The Odds API,
+Nightly settlement: fetch completed scores from The Odds API,
 save to Supabase `ergebnisse`, then auto-settle open bets in `wetten`.
 
 Safety rules (two independent layers):
-  Layer 1 - Score fetch:   only store results where completed=True AND match_date <= today
-  Layer 2 - Bet settle:    skip any wette whose datum > today, regardless of results
-  Lookup key:              (home_team, away_team, match_date) — never by name alone
+  Layer 1 - Score fetch : only store results where completed=True AND match_date < today
+                          (today's games are NEVER stored — timezone/timing risk)
+  Layer 2 - Bet settle  : skip any wette whose datum >= today (strictly past days only)
+  Lookup key            : (home_team, away_team, match_date) — never by name alone
 """
 import os
 import requests
-from datetime import date
+from datetime import date, timedelta
 
 SUPABASE_URL = "https://yloudwrsmpbtxovxozqm.supabase.co"
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_E43hus55ruODU1i0G8FLjg_TLVAoghZ")
@@ -38,13 +39,14 @@ def norm(name):
 # ── 1. Scores holen und speichern ────────────────────────────────────────────
 
 def fetch_and_save_scores():
-    today_str = date.today().isoformat()
-    print(f"  Datum heute: {today_str}")
+    today_str     = date.today().isoformat()
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+    print(f"  Heute: {today_str} | Nur Spiele mit match_date < {today_str} werden akzeptiert")
 
     alle = []
     for liga, sport_key in LIGEN.items():
         url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/scores/"
-        r = requests.get(url, params={"apiKey": ODDS_API_KEY, "daysFrom": 1}, timeout=15)
+        r = requests.get(url, params={"apiKey": ODDS_API_KEY, "daysFrom": 2}, timeout=15)
         print(f"  {liga}: HTTP {r.status_code}, remaining={r.headers.get('x-requests-remaining','?')}")
         if r.status_code != 200:
             print(f"    Fehler: {r.text[:200]}")
@@ -61,9 +63,9 @@ def fetch_and_save_scores():
             if not completed:
                 continue
 
-            # LAYER 1B: Spieldatum darf nicht in der Zukunft liegen
-            if match_date > today_str:
-                print(f"    SKIP (completed=True aber Datum {match_date} > heute): {home} vs {away}")
+            # LAYER 1B: Heutiger Tag ist VERBOTEN — nur vergangene Tage
+            if match_date >= today_str:
+                print(f"    SKIP (heute oder Zukunft, match_date={match_date}): {home} vs {away}")
                 continue
 
             scores = game.get("scores") or []
@@ -88,17 +90,17 @@ def fetch_and_save_scores():
             })
             akzeptiert += 1
 
-        print(f"    -> {akzeptiert} abgeschlossene Spiele (completed=True, Datum <= heute)")
+        print(f"    -> {akzeptiert} Spiele akzeptiert (completed=True, match_date < heute)")
 
     if not alle:
         print("  Keine verwertbaren Ergebnisse gefunden.")
         return []
 
-    # Idempotent: heute loeschen, dann neu einfuegen
+    # Idempotent: gestrige Eintraege loeschen und neu schreiben
     requests.delete(
         f"{SUPABASE_URL}/rest/v1/ergebnisse",
         headers={**SB_HEADERS, "Prefer": ""},
-        params={"match_date": f"eq.{today_str}"},
+        params={"match_date": f"eq.{yesterday_str}"},
     )
     r = requests.post(
         f"{SUPABASE_URL}/rest/v1/ergebnisse",
@@ -163,16 +165,16 @@ def settle_wette(wette_id, status, tore_heim, tore_ausw, gewinn, bankroll_danach
 def settle_open_wetten(ergebnisse):
     today_str = date.today().isoformat()
 
-    # Lookup: (norm_home, norm_away, match_date) — Datum ist Teil des Schluessels
-    # Extra-Filter: nur Ergebnisse mit match_date <= heute in den Lookup aufnehmen
+    # Lookup: (norm_home, norm_away, match_date)
+    # Extra-Filter: nur Ergebnisse mit match_date < heute (doppelte Absicherung)
     lookup = {}
     for e in ergebnisse:
-        if e["match_date"] > today_str:
-            continue  # doppelte Absicherung
+        if e["match_date"] >= today_str:
+            continue  # sollte durch fetch bereits gefiltert sein
         key = (norm(e["home_team"]), norm(e["away_team"]), e["match_date"])
         lookup[key] = e
 
-    print(f"  {len(lookup)} Ergebnisse im Lookup (Datum <= {today_str})")
+    print(f"  {len(lookup)} Ergebnisse im Lookup (match_date < {today_str})")
 
     wetten = get_open_wetten()
     print(f"  {len(wetten)} offene Wetten\n")
@@ -192,12 +194,13 @@ def settle_open_wetten(ergebnisse):
         einsatz  = float(wette["einsatz"])
         quote    = float(wette["quote"])
 
-        # LAYER 2: Spieldatum der Wette muss <= heute sein
-        if not datum or datum > today_str:
-            print(f"  SKIP (Spieldatum in Zukunft): {heim} vs {ausw} | {datum} > {today_str}")
+        # LAYER 2: Spieldatum muss strikt in der Vergangenheit liegen
+        # >= today bedeutet: heute oder Zukunft → niemals anfassen
+        if not datum or datum >= today_str:
+            print(f"  SKIP (heute oder Zukunft): {heim} vs {ausw} | datum={datum} >= heute={today_str}")
             continue
 
-        # Lookup by (teams + exact date) — verhindert Kreuz-Datum-Matches
+        # Lookup by (teams + exact match_date) — kein Kreuz-Datum-Matching
         ergebnis = lookup.get((norm(heim), norm(ausw), datum))
         swapped  = False
         if not ergebnis:
@@ -205,7 +208,7 @@ def settle_open_wetten(ergebnisse):
             swapped  = True
 
         if not ergebnis:
-            print(f"  WARTE: Noch kein Ergebnis fuer: {heim} vs {ausw} ({datum})")
+            print(f"  WARTE: Kein Ergebnis fuer: {heim} vs {ausw} ({datum})")
             continue
 
         gesamt    = ergebnis["total_goals"]
