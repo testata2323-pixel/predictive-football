@@ -904,7 +904,7 @@ async function ladeEmpfehlungen() {
   }
 
   empfehlungen.sort((a,b) => a.spielDatum - b.spielDatum);
-  document.getElementById('signal-count').textContent = empfehlungen.length + ' Signale';
+  // signal-count wird nach TOP PICK-Filter gesetzt
 
   // DEBUG: Geladene Spiele zählen (Date format: YYYY-MM-DD)
   const heuteDbg = new Date(); heuteDbg.setHours(0,0,0,0);
@@ -948,10 +948,12 @@ async function ladeEmpfehlungen() {
     e.konsistenz_strat = strat.konsistenz;
   });
 
-  // Rang nach Score vergeben, dann nach Datum sortieren
+  // Rang nach Score vergeben — nur TOP PICK (rang 0) anzeigen, SOLIDE und MÖGLICH ausblenden
   const byScore = [...empfehlungen].sort((a, b) => b.score - a.score);
   byScore.forEach((e, i) => { e.rang = i; });
+  empfehlungen.splice(0, empfehlungen.length, ...empfehlungen.filter(e => e.rang === 0));
   empfehlungen.sort((a, b) => a.spielDatum - b.spielDatum);
+  document.getElementById('signal-count').textContent = empfehlungen.length + ' Signale';
 
   // Rang und Farbe zuweisen
   const RANG_CONFIG = [

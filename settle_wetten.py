@@ -127,6 +127,15 @@ def fetch_and_save_scores():
             goals_away = tore[away]
             total      = goals_home + goals_away
 
+            # CHECK E: Redundanter Fallback — 0:0 fuer heutige/zukuenftige Spiele = Platzhalter
+            # Die Odds API setzt manchmal completed=True mit 0:0 fuer ungespielte Spiele.
+            # Obwohl CHECK B das abfangen sollte, schuetzt dieser Check falls CHECK B versagt.
+            if goals_home == 0 and goals_away == 0 and match_date >= today_str:
+                print(f"{label} | 0:0")
+                print(f"      -> SKIP: 0:0 Platzhalter-Score bei heutigem/zukuenftigem Spiel "
+                      f"(match_date={match_date} >= heute={today_str})")
+                continue
+
             print(f"{label} | {goals_home}:{goals_away}")
             print(f"      -> AKZEPTIERT: {total} Tore gesamt")
 
